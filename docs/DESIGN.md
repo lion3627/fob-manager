@@ -1,6 +1,8 @@
 # FOB Kestrel: design
 
-Status: two throwaway prototypes built, third build planned. Last updated 2026-11-13.
+Status: first working vertical slice of the living-world engine is in `src/`. Last updated 2026-11-13.
+
+The brief that governs the current build is the "Persistent Military Operations Command Simulator" specification: a world that exists independently of the player's awareness, three separated layers (true state, knowledge, decisions), physical logistics, watchable combat, two observation interfaces, and responsibility that grows from a narrow start inside an organisation that already functions. Where that brief and the earlier notes below differ (for example, starting from a bare site versus starting inside a working base), the brief wins; the bare-site build-up is deferred.
 
 ## Vision
 
@@ -95,3 +97,9 @@ Each specialist takes over a chore the player has already been doing by hand, an
 
 - **v0.0.1:** comms coverage with relays, check-in windows and lost-comms plans; reports queued in the field and delivered late; lazy enemy generation with pinned facts; higher-command asset pool with stated reasons; raid planner with release point, GO hold and abort criteria; after-action review of truth against knowledge.
 - **v0.0.2:** continuous clock; standing procedures with a countdown and override; roster projection and sustainability estimate; build queue; incident review listing the routines that drove each outcome.
+
+## Current slice: what exists and what does not
+
+Built and tested: seeded one-second engine; physical inventories with conservation audit; road movement with fuel burn and breakdowns; individual soldiers with line-of-sight observation; direct fire from carried ammunition with suppression and casualties; voice and satellite links with delays; command-post knowledge separate from truth; autonomous squads with battle drill on contact; two enemy cells that act on their own observations; operations officer, logistics officer and depot dispatcher with decision traces; reconnaissance operation the player approves; incident decisions with a window after which the staff acts; five responsibilities that unlock; command and observer views of the same simulation; save and load.
+
+Not yet: guard posts as manned positions with arcs and gaps; engineers and base build-up; staff as people with skill; air MEDEVAC, fires and unmanned aircraft; route clearance; the coarse wider theatre; lazy detail generation; more than one base or operation; an after-action review.

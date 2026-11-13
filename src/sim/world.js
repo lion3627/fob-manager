@@ -110,6 +110,9 @@
     };
     cell('e1', 'Cell North', { x: 17800, y: 11900 }, 6, [{ id: 'a1', pos: { x: 16150, y: 9050 }, obs: { x: 16620, y: 9060 }, road: { x: 16000, y: 9000 } }, { id: 'a2', pos: { x: 14060, y: 11160 }, obs: { x: 14160, y: 11620 }, road: { x: 14000, y: 11000 } }]);
     cell('e2', 'Cell South', { x: 6300, y: 6900 }, 5, [{ id: 'b1', pos: { x: 8900, y: 5420 }, obs: { x: 8740, y: 5760 }, road: { x: 9000, y: 5250 } }, { id: 'b2', pos: { x: 6420, y: 3920 }, obs: { x: 6240, y: 4260 }, road: { x: 6500, y: 3750 } }]);
+    /* The cells were here before the scenario opened and have already watched the routine patrols go by. */
+    [[-30, 16000, 9000], [-21, 16050, 8900], [-9, 14000, 11000]].forEach(g => W.units.e1.kb.sight.push({ t: W.t + g[0] * F.H, x: g[1], y: g[2], n: 9, veh: 2, u: 'u2' }));
+    W.units.e2.kb.sight.push({ t: W.t - 20 * F.H, x: 9000, y: 5250, n: 8, veh: 3, u: 'cv' });
     /* The planned reconnaissance operation: the staff will draft it, the player approves it. */
     W.ops.push({ id: 'op1', name: 'Reconnaissance of NAI 1', status: 'pending', nai: { x: 17700, y: 11700 }, op: { x: 16900, y: 10900 }, drop: 'tol', dwell: 2 * F.H, unit: null, start: null, qrfReady: false, draftAt: W.t + 900, res: { JP8: 60, MRE: 27, WATER: 36 } });
     /* HQ starts knowing its own units at the base, and nothing about the enemy beyond the assessment. */

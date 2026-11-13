@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en" data-phase="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOB Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&amp;family=B612+Mono:wght@400;700&amp;family=Saira+Extra+Condensed:wght@500;700&amp;display=swap" rel="stylesheet">
+<!--CSS--><link rel="stylesheet" href="src/ui/style.css"><!--/CSS-->
+</head>
+<body data-mode="command">
+<header id="top">
+  <div id="clock">D1 0500:00</div>
+  <div class="seg" id="speed" role="group" aria-label="Clock speed">
+    <button data-a="speed:0" data-v="0" aria-pressed="false">Pause</button><button data-a="speed:1" data-v="1" aria-pressed="false" title="Real time">1×</button><button data-a="speed:10" data-v="10" aria-pressed="false">10×</button><button data-a="speed:60" data-v="60" aria-pressed="true" title="One minute per second">60×</button><button data-a="speed:300" data-v="300" aria-pressed="false" title="Five minutes per second">300×</button>
+  </div>
+  <span class="sp"></span>
+  <div class="seg" id="mode" role="group" aria-label="View">
+    <button data-a="mode:command" data-v="command" aria-pressed="true" title="What the command post knows">Command post</button><button data-a="mode:observer" data-v="observer" aria-pressed="false" title="Developer view of the true world">Observer</button>
+  </div>
+  <div class="seg" role="group" aria-label="Scenario"><button data-a="save">Save</button><button data-a="load">Load</button><button data-a="new">New</button></div>
+</header>
+<main id="main">
+  <section id="mapPane" aria-label="Map">
+    <canvas id="map" aria-label="Map of the area of operations"></canvas>
+    <div id="mapBar"><button class="btn sm" data-a="jump:ao">Whole area</button><button class="btn sm" data-a="jump:fob">FOB</button><button class="btn sm" data-a="jump:depot">Depot</button><button class="btn sm" data-a="jump:fight">Contact</button><button class="btn sm" data-a="zoom:1.5" aria-label="Zoom in">+</button><button class="btn sm" data-a="zoom:0.667" aria-label="Zoom out">−</button></div>
+    <div id="alert"></div>
+  </section>
+  <section id="side" aria-label="Panels"><nav id="tabs" aria-label="Panels"></nav><div id="panel"></div></section>
+</main>
+<!--JS-->
+<script src="src/sim/core.js"></script><script src="src/sim/inventory.js"></script><script src="src/sim/world.js"></script><script src="src/sim/mechanics.js"></script><script src="src/sim/comms.js"></script><script src="src/sim/units.js"></script><script src="src/sim/enemy.js"></script><script src="src/sim/staff.js"></script><script src="src/sim/player.js"></script><script src="src/sim/sim.js"></script>
+<script src="src/ui/map.js"></script><script src="src/ui/app.js"></script>
+<!--/JS-->
+</body>
+</html>
