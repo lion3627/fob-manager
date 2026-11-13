@@ -45,6 +45,7 @@
   }
 
   F.addFighter = (W, u) => soldier(W, u, 'FTR', 'AK', u.base);
+  F.mkSoldier = soldier; F.mkUnit = unit; F.mkVehicle = vehicle;
   F.newWorld = seed => {
     const W = { v: 1, seed, rs: seed | 0, t: 5 * F.H, nid: 1, map: { w: 20000, h: 14000, nodes: NODES, edges: EDGES,
       blockers: [{ x: 13800, y: 8900, r: 1400, name: 'Hill 402 ridge' }],

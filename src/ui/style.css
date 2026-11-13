@@ -3,7 +3,7 @@
      day is printed map paper, night is a dimmed operations room. */
   --paper: #dfe3d6; --panel: #eceee4; --raise: #f6f7f0; --ink: #182325; --mute: #55645f; --line: #b3bcac;
   --accent: #b24a06; --friend: #1c5aa6; --host: #b3261e; --ok: #2c6b41; --warn: #946000; --crit: #b3261e;
-  --map: #e7e4d1; --contour: #b89a6a; --water: #4f86a8; --veg: #7fa06c;
+  --map: #e7e4d1; --contour: #b89a6a; --water: #4f86a8; --veg: #7fa06c; --el4: #6b47a8;
   --f-display: 'Saira Extra Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
   --f-body: 'B612', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --f-mono: 'B612 Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -12,7 +12,7 @@
 :root[data-phase="night"] {
   --paper: #121617; --panel: #192022; --raise: #222a2c; --ink: #ddd7c5; --mute: #939a90; --line: #364042;
   --accent: #eba044; --friend: #7ab2f2; --host: #f28374; --ok: #72c08c; --warn: #e5b54a; --crit: #f28374;
-  --map: #171c1b; --contour: #5e4d36; --water: #3f6f8c; --veg: #3f5a3c; color-scheme: dark;
+  --map: #171c1b; --contour: #5e4d36; --water: #3f6f8c; --veg: #3f5a3c; --el4: #c4a0f5; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }

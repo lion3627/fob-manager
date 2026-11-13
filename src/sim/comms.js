@@ -8,6 +8,7 @@
      data: vehicle-mounted satellite messaging, slow but terrain-independent. null: no communications. */
   F.link = (W, u) => {
     const mast = W.map.nodes.fob, pwr = W.fob.power ? 1 : 0.5;
+    if (u.riding && W.units[u.riding]) return F.link(W, W.units[u.riding]); // passengers talk on the vehicle's sets
     if (F.atFob(W, u.pos)) return 'direct';
     const vpos = u.vehicles.length ? W.vehicles[u.vehicles[0]].pos : null;
     const withVeh = vpos && (!u.dis || F.dist(u.pos, vpos) < 150);
@@ -15,6 +16,7 @@
     if (F.dist(u.pos, mast) <= range && !F.blocked(W, u.pos, mast)) return 'voice';
     for (const id in W.units) { const r = W.units[id]; if (r === u || r.side !== 'blue' || r.kind === 'hq' || r.kind === 'support' || !F.unitOk(W, r).length) continue; if (F.atFob(W, r.pos)) continue; if (F.dist(u.pos, r.pos) <= 5000 && !F.blocked(W, u.pos, r.pos) && F.dist(r.pos, mast) <= 12000 * pwr && !F.blocked(W, r.pos, mast)) return 'voice'; }
     if (vpos && (withVeh || (F.dist(u.pos, vpos) <= 3000 && !F.blocked(W, u.pos, vpos)))) return 'data';
+    if (u.tacsat && !u.moving && W.t - (u.stillSince == null ? W.t : u.stillSince) >= 60) return 'tacsat'; // manpack satellite radio: only once halted with the antenna up
     return null;
   };
   F.send = (W, from, to, type, prio, text, data, cause) => {
@@ -52,7 +54,7 @@
           if (!unit) { m.state = 'done'; continue; }
           chan = F.link(W, unit);
           if (!chan) { if (!m.tries) F.ev(W, 'no-comms', `${m.type} ${m.from === 'HQ' ? 'to' : 'from'} ${unit.call} cannot be passed: no link from ${F.grid(unit.pos)}`, null, m.cause); m.tries++; continue; }
-          delay = chan === 'direct' ? 5 : chan === 'voice' ? F.ri(W, 10, 25) : F.ri(W, 120, 300);
+          delay = chan === 'direct' ? 5 : chan === 'voice' ? F.ri(W, 10, 25) : chan === 'tacsat' ? F.ri(W, 30, 90) : F.ri(W, 120, 300);
         }
         const proc = m.to === 'HQ' ? (m.prio === 'F' ? F.ri(W, 20, 45) : m.prio === 'P' ? F.ri(W, 45, 120) : F.ri(W, 90, 240)) : m.from === 'HQ' ? F.ri(W, 30, 75) + F.ri(W, 15, 40) : F.ri(W, 30, 90);
         m.chan = chan; m.tArr = W.t + delay + proc; m.state = 'air';
@@ -69,6 +71,7 @@
     for (const id in W.units) {
       const u = W.units[id]; if (u.side !== 'blue') continue; const k = H.units[id];
       if (F.atFob(W, u.pos)) { H.units[id] = Object.assign({ t: W.t, src: 'fob' }, self(W, u)); continue; }
+      if (u.riding && W.units[u.riding] && k) { const c = W.units[u.riding]; if ((c.lastBeacon || 0) > (u.lastBeacon || 0)) { u.lastBeacon = c.lastBeacon; k.pos = { x: Math.round(c.pos.x), y: Math.round(c.pos.y) }; k.t = W.t; k.src = 'beacon'; k.veh = false; } continue; }
       if (u.vehicles.length && W.t - u.lastBeacon >= 300) { u.lastBeacon = W.t; const v = W.vehicles[u.vehicles[0]]; if (k) { k.pos = { x: Math.round(v.pos.x), y: Math.round(v.pos.y) }; k.t = W.t; k.src = 'beacon'; k.veh = u.dis && F.dist(u.pos, v.pos) > 150; } }
     }
     const R = (night ? 700 : 1300) + (W.fob.project.done ? 300 : 0);

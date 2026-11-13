@@ -1,8 +1,19 @@
 # FOB Kestrel: design
 
-Status: first working vertical slice of the living-world engine is in `src/`. Last updated 2026-11-13.
+Status: the operations manager (`ops.html`) is the current focus, running on the living-world engine in `src/`. Last updated 2026-11-13.
 
 The brief that governs the current build is the "Persistent Military Operations Command Simulator" specification: a world that exists independently of the player's awareness, three separated layers (true state, knowledge, decisions), physical logistics, watchable combat, two observation interfaces, and responsibility that grows from a narrow start inside an organisation that already functions. Where that brief and the earlier notes below differ (for example, starting from a bare site versus starting inside a working base), the brief wins; the bare-site build-up is deferred.
+
+## Direction from 2026-11-13: start as an operations manager
+
+The owner narrowed the starting scope: begin with an operations manager on the same simulation core, and widen to bigger scopes later (the base, logistics, staff, the theatre). Two scenario scopes come first:
+
+1. **Special operations raid**: come in, eliminate a target, extract. Small team, few elements, surprise decides it.
+2. **Bigger operation**: several squads, where timing, coordination, routing and objectives matter.
+
+What a scenario is: the ground, a force organised into elements, an enemy that holds a position and reacts to what it sees and hears, and an objective. The player writes the plan (routes, positions, pace, start point, H-hour, code words) and runs it from the command post, where they know only what the radio has brought. Element leaders follow the plan as they understand it, go on the clock if no code word arrives, and act on their own initiative when compromised. The after-action review sets truth against what the command post heard.
+
+The living base stays in `index.html` and keeps working; operation worlds skip its staff and logistics loop. The base becomes the next scope up once operations are fun on their own.
 
 ## Vision
 
@@ -88,9 +99,11 @@ Each specialist takes over a chore the player has already been doing by hand, an
 
 ## Open questions
 
+- For operations: how much should a staff officer draft the plan for the player, and should that also be gated on having the specialist?
+- Should the operation scope later share one persistent world with the base, so an operation's casualties and ammunition come back to the FOB?
 - Do specialists arrive in a fixed order at milestones, or does the player choose whom to request first from limited slots?
 - How much of the base layout does the player place by hand?
-- How are firefights shown when the player has no feed from that location: withheld, or reconstructed afterwards?
+- How are firefights shown when the player has no feed from that location: withheld, or reconstructed afterwards? (Current answer in operations: withheld in the command post view, reconstructed in the review.)
 - What is the unit of time on screen that keeps individual movement watchable but lets a ten-day deployment finish?
 
 ## What the prototypes are worth keeping for
@@ -103,3 +116,9 @@ Each specialist takes over a chore the player has already been doing by hand, an
 Built and tested: seeded one-second engine; physical inventories with conservation audit; road movement with fuel burn and breakdowns; individual soldiers with line-of-sight observation; direct fire from carried ammunition with suppression and casualties; voice and satellite links with delays; command-post knowledge separate from truth; autonomous squads with battle drill on contact; two enemy cells that act on their own observations; operations officer, logistics officer and depot dispatcher with decision traces; reconnaissance operation the player approves; incident decisions with a window after which the staff acts; five responsibilities that unlock; command and observer views of the same simulation; save and load.
 
 Not yet: guard posts as manned positions with arcs and gaps; engineers and base build-up; staff as people with skill; air MEDEVAC, fires and unmanned aircraft; route clearance; the coarse wider theatre; lazy detail generation; more than one base or operation; an after-action review.
+
+## Operations slice: what exists and what does not
+
+Built and tested: two scenarios on one valley map (a 12-man raid and a four-element platoon cordon and raid); plans as legs (ride, move, wait, support by fire, block, assault with search, exfiltrate) with editable waypoints, pace, start point, H-hour and vehicle drop; code words ALPHA to DELTA delivered by radio with real delay; element leaders who go on the clock or on what they hear over the net from other elements, and initiate when compromised; passengers riding in a vehicle element; manpack satellite radio that works only when halted; an enemy that holds a compound, is alerted by engines, gunfire and what its sentries see, defends, withdraws, and a target who may hide or slip away; a reinforcing cell that comes to the sound of the guns; capture, identification and search reports; outcome and a review of truth against reports.
+
+Not yet: aviation (assault helicopters, MEDEVAC, overhead feeds); indirect fire; breaching and room clearing inside buildings; fratricide and shifting fires; more than one objective per operation; staff that drafts the plan; links between operations and the living base.

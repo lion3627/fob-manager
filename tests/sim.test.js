@@ -110,3 +110,66 @@ test('the commander cannot change standing orders that are not yet theirs, and a
   F.run(W, 4 * H); assert.ok(['active', 'done', 'aborted'].includes(W.ops[0].status), 'status ' + W.ops[0].status);
   assert.strictEqual(W.player.resp.support, 'held'); assert.strictEqual(F.cmd.setSO(W, 'qrfNTM', 300).ok, true); assert.strictEqual(W.so.qrfNTM, 300);
 });
+
+/* ---------- operations ---------- */
+const runOp = (W, cap) => { const end = W.t + (cap || 12 * H); while (W.op.status === 'running' && W.t < end) F.step(W); return W; };
+
+test('both operation scenarios run to the end without the player, with every round and litre accounted for', () => {
+  for (const id of Object.keys(F.SCENARIOS)) {
+    const W = F.createOp(5, id); assert.strictEqual(F.opCmd.launch(W).ok, true); runOp(W);
+    assert.strictEqual(W.op.status, 'complete', id + ' did not finish');
+    const a = F.audit(W); for (const ty in a) assert.ok(Math.abs(a[ty].delta) < 1e-6, `${id}: ${ty} off by ${a[ty].delta}`);
+    assert.ok(W.events.some(e => e.type === 'contact'), id + ': no fight happened');
+    for (const el of Object.keys(W.op.plan.els)) assert.ok(W.decisions.some(d => d.actor === W.units[el].call) || W.units[el].kind === 'mounted', `${el} made no recorded decision`);
+  }
+});
+
+test('an operation is deterministic for a seed', () => {
+  const a = runOp(F.createOp(11, 'cobalt'), 0), b = F.createOp(11, 'cobalt'); F.opCmd.launch(a); F.opCmd.launch(b);
+  runOp(a, 6 * H); runOp(b, 6 * H); assert.strictEqual(F.hash(a), F.hash(b));
+});
+
+test('the plan can only be edited while planning, and launch checks the timings', () => {
+  const W = F.createOp(3, 'cobalt'), L = W.op.plan.els.a1[1];
+  assert.strictEqual(F.opEdit.move(W, 'a1', 1, 0, { x: 8000, y: 5000 }), true); assert.deepStrictEqual(L.pts[0], { x: 8000, y: 5000 });
+  assert.strictEqual(F.opEdit.move(W, 'a1', 7, 0, { x: 1, y: 1 }), false, 'a point tied to the vehicle drop cannot be dragged');
+  F.opEdit.times(W, W.t + 300, null); assert.strictEqual(F.opCmd.launch(W).ok, false, 'start point too soon');
+  F.opEdit.times(W, W.t + 1800, W.t + 2400); assert.strictEqual(F.opCmd.launch(W).ok, false, 'H-hour too close to the start point');
+  F.opEdit.times(W, W.t + 1800, W.t + 4 * H); assert.strictEqual(F.opCmd.launch(W).ok, true);
+  assert.strictEqual(F.opEdit.move(W, 'a1', 1, 0, { x: 7000, y: 5000 }), false, 'no editing once launched');
+});
+
+test('a code word does nothing until the radio message reaches the element', () => {
+  const W = F.createOp(4, 'cobalt'); F.opEdit.clock(W, 'a1', 2, 'until', false); F.opCmd.launch(W);
+  while (W.units.a1.phase !== 'waiting: leave the ORP') F.step(W);
+  F.run(W, 1800); assert.strictEqual(W.units.a1.phase, 'waiting: leave the ORP', 'without the clock, the element waits for the code');
+  F.opCmd.code(W, 'ALPHA'); assert.ok(!W.units.a1.codes.ALPHA, 'not yet delivered'); const t0 = W.t;
+  while (!W.units.a1.codes.ALPHA && W.t < t0 + 900) F.step(W);
+  assert.ok(W.units.a1.codes.ALPHA - t0 >= 30, `arrived after ${W.units.a1.codes.ALPHA - t0} s`);
+  F.run(W, 120); assert.notStrictEqual(W.units.a1.phase, 'waiting: leave the ORP');
+});
+
+test('passengers move with their vehicles, and the radio of a passenger is the vehicle\'s', () => {
+  const W = F.createOp(6, 'iron'); F.opCmd.launch(W); const p1 = W.units.p1, p4 = W.units.p4;
+  while (!p1.riding) F.step(W); F.run(W, 600);
+  assert.ok(p4.moving, 'convoy under way'); const v = W.vehicles[p4.vehicles[0]];
+  p1.members.forEach(id => assert.ok(W.soldiers[id].inVeh, 'soldier aboard'));
+  assert.ok(F.dist(p1.pos, v.pos) < 50); assert.strictEqual(F.link(W, p1), F.link(W, p4));
+});
+
+test('engines heard near the compound alert the enemy; the target may slip away before anyone fires', () => {
+  const W = F.createOp(2, 'cobalt'); W.op.plan.hide = 'sarak'; F.opCmd.launch(W); runOp(W, 5 * H);
+  const heard = W.events.find(e => e.type === 'enemy-alert' && /heard vehicles/.test(e.text)); assert.ok(heard, 'the guard heard the vehicles');
+  const shot = W.events.find(e => e.type === 'contact'); assert.ok(!shot || shot.t > heard.t);
+});
+
+test('the command post only believes the target is taken when an element reports it, and then it is true', () => {
+  let reports = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    const W = F.createOp(seed, 'iron'); F.opCmd.launch(W); runOp(W); const h = Object.values(W.soldiers).find(s => s.hvt);
+    if (W.hq.hvt && W.hq.hvt.state === 'captured') { reports++; assert.strictEqual(h.state, 'det'); }
+    if (W.hq.hvt && W.hq.hvt.state === 'killed') { reports++; assert.strictEqual(h.state, 'kia'); }
+    if (!W.hq.hvt) assert.ok(!W.hq.log.some(l => /JACKPOT/.test(l.text)));
+  }
+  assert.ok(reports >= 1, 'at least one run produced a target report');
+});
