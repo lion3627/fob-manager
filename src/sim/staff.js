@@ -62,6 +62,7 @@
     return true;
   };
   F.staffOnReport = (W, m, u) => {
+    if (W.scn) { if (u && u.side === 'blue' && F.opOnReport) F.opOnReport(W, m, u); return; }
     if (!u || u.side !== 'blue') return; const open = W.incidents.find(i => i.unit === u.id && i.status !== 'closed');
     if (m.type === 'CONTACT' && !(open && open.kind === 'contact')) {
       if (open) open.status = 'closed';

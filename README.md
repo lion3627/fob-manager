@@ -6,17 +6,27 @@ Working title for the base and scenario: FOB Kestrel.
 
 ## Run it
 
-No install and no server. Open `index.html` in a browser.
+No install and no server. Open `ops.html` in a browser for the operations manager (the current focus), or `index.html` for the living base.
 
 ```
-node --test tests/sim.test.js     # 13 engine tests
-node tools/probe.js 7 48          # headless: seed 7, 48 hours, prints audit and event counts
-python3 tools/build.py            # one self-contained page at dist/index.html
+node --test tests/sim.test.js     # engine tests
+node tools/opprobe.js cobalt 7 60 # headless operation: scenario, seed, last N events
+node tools/probe.js 7 48          # headless living base: seed 7, 48 hours, prints audit and event counts
+python3 tools/build.py            # self-contained pages at dist/index.html and dist/ops.html
 ```
 
 Node 18 or later for the tests. The simulation itself has no dependencies.
 
-## What you can do in it
+## Operations manager (ops.html)
+
+Pick an operation, write the plan on the map, approve it, then run it from the command post.
+
+- **Raid on Objective Cobalt**: a 12-man Special Forces team drives to a vehicle drop, walks to an objective rally point, closes on a compound at night and kills or captures the target, then exfiltrates.
+- **Cordon and raid on Objective Iron**: a rifle platoon of four elements. One squad blocks the escape route and the road from the next village, one sets a support-by-fire position, one assaults, and a vehicle section waits at the drop.
+
+You set the start point time, H-hour, where the vehicles drop and wait, every route and position (drag the waypoints), the pace of each leg, and which steps wait for a code word (ALPHA to DELTA) or also go on the clock. During the operation you call code words and can abort; each code reaches an element only when the radio message does. Element leaders act on their own when compromised. When everyone is back, the Review tab sets what happened against what you heard and when.
+
+## Living base (index.html)
 
 1. Start it and watch: patrols, guard shifts, convoys, maintenance and the enemy all run on their own.
 2. **Command post** view: the map shows only what headquarters knows (last reports, vehicle beacons, base cameras). Panels: Tasks, Reports, Units, Staff, Logistics, Orders.
@@ -48,9 +58,11 @@ src/sim/units.js       subordinate leaders: plans, battle drill on contact, repo
 src/sim/enemy.js       enemy cells: observe, find a pattern, ambush, withdraw, resupply
 src/sim/staff.js       operations officer, logistics officer, depot dispatcher, life on the base
 src/sim/player.js      the commander's responsibilities and commands
+src/sim/ops.js         operation scenarios: the ground, forces, plans, go codes, element actions, outcome
 src/sim/sim.js         the one-second step, save and load
 src/ui/map.js          one canvas map, drawn from truth or from knowledge
-src/ui/app.js          clock, modes, panels
+src/ui/app.js          living base: clock, modes, panels
+src/ui/ops.js          operations manager: scenario picker, plan editor, code words, review
 ```
 
 The engine is plain JavaScript with no DOM access. State is plain JSON, so a save is `JSON.stringify` of the world. The same seed always produces the same world.

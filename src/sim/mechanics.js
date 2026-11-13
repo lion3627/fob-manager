@@ -35,7 +35,8 @@
     } else {
       const dx = m.to.x - u.pos.x, dy = m.to.y - u.pos.y, d = Math.hypot(dx, dy);
       const carry = u.members.some(id => { const s = W.soldiers[id]; return s.state === 'wia' && !s.mobile && !s.evac; });
-      const step = m.spd * (F.coverAt(W, u.pos) > 0.3 ? 0.8 : 1) * (F.isNight(W.t) ? 0.85 : 1) * (carry ? 0.6 : 1);
+      const bound = u.con && u.assaulting ? (Math.floor(W.t / 10) % 3 ? 1 : 0) : 1; // under fire an assault moves by bounds: rush, then get down and fire
+      const step = m.spd * (F.coverAt(W, u.pos) > 0.3 ? 0.8 : 1) * (F.isNight(W.t) ? 0.85 : 1) * (carry ? 0.6 : 1) * bound;
       if (d > 0.01) u.hdg = Math.atan2(dy, dx);
       if (step >= d) { u.pos = { x: m.to.x, y: m.to.y }; u.mv = null; } else { u.pos.x += dx / d * step; u.pos.y += dy / d * step; }
       u.moving = true;
@@ -44,9 +45,10 @@
   /* Put each soldier where the unit's situation says they are. */
   F.place = (W, u) => {
     const nv = u.vehicles.length, c = Math.cos(u.hdg - Math.PI / 2), sn = Math.sin(u.hdg - Math.PI / 2); let k = 0;
-    const hold = u.con && u.con.phase === 'fight' && !u.con.settle;
+    const hold = u.con && u.con.phase === 'fight' && !u.con.settle && !u.assaulting;
+    if (u.riding) { const cr = W.units[u.riding], cv = cr.vehicles.map(v => W.vehicles[v]); u.pos = { x: cr.pos.x, y: cr.pos.y }; u.members.forEach((id, i) => { const s = W.soldiers[id]; if (s.evac) return; const v = cv[i % cv.length]; s.pos.x = v.pos.x; s.pos.y = v.pos.y; s.inVeh = true; s.moving = !!cr.moving; }); placeDet(W, u); return; }
     u.members.forEach((id, i) => {
-      const s = W.soldiers[id]; if (s.evac) return; let tx, ty;
+      const s = W.soldiers[id]; if (s.evac || s.state === 'det') return; let tx, ty; s.sneak = u.pace === 'stealth';
       const crew = u.crew.indexOf(id);
       if (nv && (!u.dis || crew >= 0)) { const v = W.vehicles[u.vehicles[(crew >= 0 ? crew : i) % nv]]; tx = v.pos.x; ty = v.pos.y; s.pos.x = tx; s.pos.y = ty; s.inVeh = true; s.moving = !!u.moving && !u.dis; return; }
       s.inVeh = false;
@@ -58,7 +60,12 @@
       if (d <= sp) { s.pos.x = tx; s.pos.y = ty; s.moving = d > 0.4 || !!u.moving; } else { s.pos.x += dx / d * sp; s.pos.y += dy / d * sp; s.moving = true; }
     });
     if (u.con && u.con.settle && W.t >= u.con.settle) u.con.settle = 0;
+    placeDet(W, u);
   };
+  function placeDet(W, u) { // detainees go where their captors go
+    if (!u.det) return; const v = u.riding ? W.vehicles[W.units[u.riding].vehicles[0]] : null;
+    u.det.forEach((id, i) => { const s = W.soldiers[id]; if (v) { s.pos.x = v.pos.x; s.pos.y = v.pos.y; s.inVeh = true; return; } s.inVeh = false; const tx = u.pos.x - Math.cos(u.hdg) * (6 + i * 3), ty = u.pos.y - Math.sin(u.hdg) * (6 + i * 3), dx = tx - s.pos.x, dy = ty - s.pos.y, d = Math.hypot(dx, dy); if (d <= 2.4) { s.pos.x = tx; s.pos.y = ty; } else { s.pos.x += dx / d * 2.4; s.pos.y += dy / d * 2.4; } s.moving = d > 0.4; });
+  }
 
   /* Observation. Each soldier's eyes, limited by range, darkness, concealment and terrain. */
   F.sense = W => {
@@ -74,11 +81,11 @@
         let any = false;
         for (const e of V.members.map(id => W.soldiers[id])) {
           if (e.evac) continue; const tr = U.kb.con[e.id]; if (e.state === 'kia' && (!tr || tr.down)) continue;
-          const firing = W.t - e.firedAt < 6; let conceal = F.coverAt(W, e.pos) * (e.moving ? 0.5 : 1); if (V.side === 'red' && !e.moving && !firing) conceal += 0.3; if (V.observing) conceal += 0.25;
+          const firing = W.t - e.firedAt < 6; let conceal = F.coverAt(W, e.pos) * (e.moving ? 0.5 : 1); if ((V.side === 'red' || V.opEl) && !e.moving && !firing) conceal += 0.3; if (V.observing) conceal += 0.25;
           const vb = e.inVeh ? 3 : 1;
           for (const s of eyes) {
             const r = F.dist(s.pos, e.pos); if (r > (e.inVeh && e.moving ? Math.max(maxR * 1.5, 900) : maxR)) continue; // moving vehicles are heard as well as seen if (F.blocked(W, s.pos, e.pos)) continue;
-            let p = F.clamp(1.15 - r / maxR, 0.03, 0.9) * 0.3 * (firing ? 5 : 1) * (e.moving ? 1.6 : 1) * (1 - Math.min(0.975, conceal)) * (U.observing ? 1.7 : 1) * vb * (s.inVeh && s.moving && !firing ? 0.2 : 1);
+            let p = F.clamp(1.15 - r / maxR, 0.03, 0.9) * 0.3 * (firing ? 5 : 1) * (e.moving ? (e.sneak ? 0.8 : 1.6) : 1) * (1 - Math.min(0.975, conceal)) * (U.observing ? 1.7 : 1) * (U.post && !U.alerted ? 0.15 : 1) * vb * (s.inVeh && s.moving && !firing ? 0.2 : 1);
             if (tr && W.t - tr.t < 30) p = Math.max(p, 0.5);
             if (F.ch(W, Math.min(0.97, p))) { U.kb.con[e.id] = { x: e.pos.x, y: e.pos.y, t: W.t, down: e.state !== 'ok', unit: V.id }; any = true; break; }
           }
@@ -105,7 +112,7 @@
     for (const id in W.units) {
       const U = W.units[id]; let any = false;
       for (const sid of U.members) { const s = W.soldiers[sid]; if (s.supp > 0) s.supp = Math.max(0, s.supp - 0.045); }
-      if (!U.con) continue;
+      if (!U.con || U.cease) continue;
       const tracks = F.fresh(W, U, 150); if (!tracks.length) continue;
       const surprise = U.side === 'red' && W.t - U.con.t0 < 20 ? 2.5 : 1; // the opening burst of an ambush lands on people who are not yet behind cover
       for (const sid of U.members) {
@@ -131,15 +138,16 @@
         const cov = Math.min(0.8, F.coverAt(W, e.pos) + (e.moving ? 0 : 0.3) + (e.inVeh ? 0.45 : 0));
         for (let k = 0; k < n; k++) {
           e.supp = Math.min(1, e.supp + (md < 25 ? 0.028 : 0.008)); e.hitAt = W.t;
-          const p = 0.02 * w.acc * Math.exp(-bd / 260) * (1 - 0.55 * s.supp) * (1 - cov) * (aimed && md < 8 ? 1 : 0.12) * (night ? 0.6 : 1) * surprise;
+          const p = 0.02 * w.acc * Math.exp(-bd / 260) * (1 - 0.55 * s.supp) * (1 - cov) * (aimed && md < 8 ? 1 : 0.12) * (night ? (U.side === 'blue' ? 0.85 : 0.5) : 1) * surprise; // night vision devices: friendly forces lose little at night, the enemy a lot
           if (e.state === 'ok' && F.ch(W, p)) wound(W, e, s, U, V);
         }
         const o = W.soldiers[F.pick(W, V.members)]; if (o && o !== e && F.dist(o.pos, e.pos) < 20) o.supp = Math.min(1, o.supp + 0.02 * n);
         if (F.ch(W, 0.12)) V.kb.con[s.id] = { x: s.pos.x + F.ri(W, -25, 25), y: s.pos.y + F.ri(W, -25, 25), t: W.t, down: false, unit: U.id }; // muzzle flash and sound
         if (W.fx.length < 240) W.fx.push({ ax: s.pos.x, ay: s.pos.y, bx: best.x + F.ri(W, -6, 6), by: best.y + F.ri(W, -6, 6), t: W.t, side: U.side });
       }
-      if (any) U.con.lastFire = W.t;
+      if (any) { U.con.lastFire = W.t; if (W.t % 3 === 0) (W.noise = W.noise || []).push({ x: Math.round(U.pos.x), y: Math.round(U.pos.y), t: W.t, side: U.side, u: U.id }); }
     }
+    if (W.noise && W.noise.length && W.t % 5 === 0) W.noise = W.noise.filter(n => W.t - n.t < 12); // gunfire carries for kilometres; anyone in earshot hears it
     if (W.fx.length && W.t % 2 === 0) W.fx = W.fx.filter(f => W.t - f.t < 3);
   };
 })();

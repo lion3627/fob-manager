@@ -4,6 +4,7 @@
 (function () {
   const F = globalThis.FOB;
   const next = u => { u.pi++; };
+  const drives = u => u.kind === 'convoy' || u.kind === 'mounted'; // vehicle elements drive through, they do not stop to fight
   const fobPos = (W, k) => ({ x: W.map.nodes.fob.x + F.FOBLAY[k].x, y: W.map.nodes.fob.y + F.FOBLAY[k].y });
   F.fobPos = fobPos;
   F.ammoPct = (W, u) => F.selfRep(W, u).ammo;
@@ -40,7 +41,7 @@
         if (!s.go) { s.go = 1; if (!F.drive(W, u, s.to, s.spd, s.stop)) { next(u); break; } }
         else if (!u.mv) { if (s.rep && W.map.nodes[u.node]) F.report(W, u, 'CHECKIN', 'R', `${u.call} at ${W.map.nodes[u.node].name}, continuing mission.`); next(u); }
         break;
-      case 'walk': if (!s.go) { s.go = 1; F.walk(W, u, s.to, s.spd); } else if (!u.mv) next(u); break;
+      case 'walk': if (!s.go) { s.go = 1; u.pace = s.pace || null; F.walk(W, u, s.to, s.spd); } else if (!u.mv) next(u); break;
       case 'halt': if (el >= s.dur) next(u); break;
       case 'observe':
         u.observing = true; if (!s.said) { s.said = 1; F.report(W, u, 'CHECKIN', 'R', `${u.call} set in observation post ${F.grid(u.pos)}. Observing.`); }
@@ -67,6 +68,7 @@
         if (u.kind !== 'convoy') { u.vehicles = []; u.crew = []; for (const id of u.members) W.soldiers[id].gun = null; }
         u.plan = null; u.task = 'idle'; u.availAt = W.t + (u.aborted ? 3600 : 1800); u.abortedLast = !!u.aborted; u.aborted = null; u.ord = null; u.done = W.t; F.ev(W, 'mission-end', `${u.name} closed on ${W.map.nodes[u.home].name}`);
         break;
+      default: if (F.opStep) F.opStep(W, u, s, el, () => next(u)); else next(u);
     }
   }
 
@@ -75,13 +77,14 @@
     const e = enemyEst(W, u);
     u.con = { t0: W.t, phase: 'fight', last: W.t, lastFire: W.t, evalAt: W.t + 30, repAt: W.t + 180, settle: u.task === 'base security' ? 0 : W.t + 12, ev: null };
     u.con.ev = F.ev(W, 'contact', `${u.name} in contact ${F.grid(u.pos)} (${why})`, { unit: u.id });
-    if (u.kind !== 'convoy') { u.hold = u.mv; u.mv = null; if (u.vehicles.length && !u.dis) u.dis = true; }
+    if (!drives(u) && !u.assaulting) { u.hold = u.mv; u.mv = null; if (u.vehicles.length && !u.dis) u.dis = true; }
     F.report(W, u, 'CONTACT', 'F', `CONTACT. ${u.call} ${why === 'ambushed' ? 'ambushed' : 'troops in contact'} vic ${F.grid(u.pos)}. ${e.n ? e.size[0] + ' to ' + e.size[1] + ' enemy' : 'Enemy strength unknown'}, small arms. ${e.n ? 'Enemy vic ' + F.grid(e.pos) + '.' : ''}`, { enemy: e }, u.con.ev);
   }
   function breakContact(W, u, why) {
     u.con.phase = 'break'; u.hold = null;
     F.report(W, u, 'SITREP', 'F', `${u.call} breaking contact: ${why}. ${F.selfRep(W, u).cas} casualties.`, { enemy: enemyEst(W, u) }, u.con.ev);
     F.ev(W, 'break', `${u.name} breaking contact: ${why}`, null, u.con.ev);
+    if (u.opEl && F.opFallback) { u.aborted = why; u.observing = false; F.opFallback(W, u, why); return; }
     const fr = F.fresh(W, u, 150); let ax = 0, ay = 0; if (fr.length) { fr.forEach(t => { ax += t.x / fr.length; ay += t.y / fr.length; }); } else { ax = u.pos.x + 1; ay = u.pos.y; }
     if (u.vehicles.length && F.dist(u.pos, W.vehicles[u.vehicles[0]].pos) > 150) { u.plan = F.planReturn(W, u); u.plan[0].spd = 1.8; u.pi = 0; u.task = 'breaking contact'; }
     else if (u.vehicles.length) { const back = u.prevNode && u.prevNode !== u.node ? u.prevNode : u.home; u.plan = [{ k: 'mount' }, { k: 'drive', to: back, spd: 10 }].concat(F.planReturn(W, u).filter(s => s.k !== 'mount' && s.k !== 'walk')); u.pi = 0; u.task = 'breaking contact'; }
@@ -94,32 +97,33 @@
     F.report(W, u, 'LACE', 'P', `${u.call} contact over. LACE: water ${Math.round(u.members.reduce((a, id) => a + (W.soldiers[id].carry.WATER || 0), 0))} L, ammunition ${r.ammo}%, casualties ${r.cas}, equipment ${u.vehicles.filter(v => W.vehicles[v].status === 'ok').length} of ${u.vehicles.length} vehicles.`, { over: true }, u.con.ev);
     if (wia) F.report(W, u, 'MEDEVAC', 'F', `${u.call} requests MEDEVAC. Line 1 ${F.grid(u.pos)}. Line 3 ${wia} urgent. Line 6 ${F.fresh(W, u, 300).length ? 'enemy in area' : 'no enemy'}.`, { medevac: wia }, u.con.ev);
     const was = u.con.phase; u.con = null; u.ord = null;
-    if (u.kind === 'convoy') return;
+    if (drives(u)) return;
     if (was === 'break') return;
-    if (r.cas > 0 || r.ammo < 50) F.abort(W, u, r.cas ? 'casualties' : 'ammunition');
-    else if (u.plan) { u.hold = null; const st = u.plan[u.pi]; if (st && st.k === 'drive') { st.go = 0; if (u.vehicles.length) u.plan.splice(u.pi, 0, { k: 'mount' }); } else if (st && st.k === 'walk') st.go = 0; }
+    if (!u.opEl && (r.cas > 0 || r.ammo < 50)) F.abort(W, u, r.cas ? 'casualties' : 'ammunition');
+    else if (u.plan) { u.hold = null; const st = u.plan[u.pi]; if (st && st.k === 'drive') { st.go = 0; if (u.vehicles.length) u.plan.splice(u.pi, 0, { k: 'mount' }); } else if (st && (st.k === 'walk' || st.k === 'assault')) st.go = 0; }
   }
   function think(W, u) {
     const under = u.members.some(id => W.t - W.soldiers[id].hitAt < 8);
     const fr = F.fresh(W, u, 90); let near = 1e9; for (const t of fr) near = Math.min(near, F.dist(u.pos, t));
     if (!u.con) {
       if (under) startContact(W, u, 'ambushed');
-      else if (fr.length && near <= 350 && W.so.roe === 'engage' && u.kind !== 'convoy') startContact(W, u, 'engaging armed enemy');
+      else if (fr.length && near <= (u.engR || 350) && (u.fire ? u.fire === 'free' : W.so.roe === 'engage') && !drives(u)) startContact(W, u, 'engaging armed enemy');
       else if (u.newCon) { u.newCon = null; if (fr.length && W.t - (u.lastSpot || -9999) > 600) { u.lastSpot = W.t; const e = enemyEst(W, u); F.report(W, u, 'SPOT', 'P', `SPOT report. Size ${e.size[0]} to ${e.size[1]}. Activity ${e.act}. Location ${F.grid(e.pos)}. Time ${F.clock(W.t)}. Equipment small arms.`, { enemy: e }); } }
       return;
     }
-    const c = u.con; if (fr.length || under) c.last = W.t;
+    const c = u.con; if (fr.length || under) c.last = W.t; if (under) c.lastHit = W.t;
     if (c.phase === 'fight' && W.t >= c.evalAt) {
       c.evalAt = W.t + 30; const ok = F.unitOk(W, u).length, cas = u.members.length - ok, ammo = F.ammoPct(W, u), K = fr.length;
-      const limit = u.ord === 'HOLD' ? 4 : Math.max(2, Math.ceil(u.members.length * 0.25));
+      const limit = u.ord === 'HOLD' ? 4 : u.assaulting || u.holdPos ? Math.max(3, Math.ceil(u.members.length * 0.4)) : Math.max(2, Math.ceil(u.members.length * 0.25));
       if (u.ord === 'BREAK') breakContact(W, u, 'ordered by the command post');
       else if (ok <= 2) breakContact(W, u, 'combat ineffective');
       else if (cas >= limit) breakContact(W, u, 'casualties');
-      else if (ammo < 25) breakContact(W, u, 'ammunition black');
-      else if (K > ok * 1.4 && u.ord !== 'HOLD') breakContact(W, u, 'outnumbered');
+      else if (ammo < (u.assaulting ? 8 : 25)) breakContact(W, u, 'ammunition black');
+      else if (K > ok * 1.4 && u.ord !== 'HOLD' && !u.assaulting && !u.holdPos) breakContact(W, u, 'outnumbered');
       else if (W.t >= c.repAt) { c.repAt = W.t + 180; F.report(W, u, 'SITREP', 'P', `${u.call} still in contact vic ${F.grid(u.pos)}. Strength ${ok}, ammunition ${ammo}%, ${cas} casualties. ${K} enemy observed.`, { enemy: enemyEst(W, u) }, c.ev); }
     }
     if (W.t - Math.max(c.last, c.lastFire) > 150) endContact(W, u);
+    else if (u.opEl && (u.cease || (u.fire === 'hold' && !u.assaulting)) && W.t - Math.max(c.lastHit || c.t0, c.lastFire) > 90) endContact(W, u); // holding fire and no longer shot at: watching, not fighting
   }
   /* An order arrives. Only now does the unit know about it. */
   F.unitRecv = (W, u, m) => {
@@ -127,6 +131,7 @@
     if (m.type === 'ORDER-BREAK') { u.ord = 'BREAK'; if (u.con) u.con.evalAt = W.t; else if (u.plan) F.abort(W, u, 'recalled'); }
     else if (m.type === 'ORDER-HOLD') u.ord = 'HOLD';
     else if (m.type === 'ORDER-RTB') { if (!u.con) F.abort(W, u, 'recalled'); else u.ord = 'BREAK'; }
+    else if (F.opRecv) F.opRecv(W, u, m);
   };
 
   /* ---------- base duties ---------- */
@@ -143,9 +148,11 @@
       const u = W.units[id]; if (u.side !== 'blue' || u.kind === 'hq' || u.kind === 'support') continue;
       if (!F.unitOk(W, u).length) continue;
       const away = !F.atFob(W, u.pos) && !(u.kind === 'convoy' && u.node === 'depot' && !u.mv);
-      if (away || u.con || u.newCon || u.members.some(sid => W.t - W.soldiers[sid].hitAt < 8)) think(W, u);
-      if (u.plan && (!u.con || u.con.phase === 'break' || u.kind === 'convoy')) runStep(W, u);
-      if (u.mv && (!u.con || u.con.phase === 'break' || u.kind === 'convoy')) F.stepMove(W, u); else u.moving = false;
+      if (!u.riding && (away || u.con || u.newCon || u.members.some(sid => W.t - W.soldiers[sid].hitAt < 8))) think(W, u);
+      const st = u.plan && u.plan[u.pi], under = !!st && ['assault', 'sse', 'await', 'sbf', 'block', 'say', 'fire', 'phase'].includes(st.k); // an assault fights its way forward; leaders keep reading the plan while in contact
+      if (u.plan && (!u.con || u.con.phase === 'break' || drives(u) || under)) runStep(W, u);
+      if (u.mv && (!u.con || u.con.phase === 'break' || drives(u) || under)) F.stepMove(W, u); else u.moving = false;
+      if (u.moving || u.stillSince == null) u.stillSince = W.t;
       if (u.plan || u.con || away) F.place(W, u); else if (u.task === 'base security' && W.t % 3 === 0) rove(W, u);
     }
   };

@@ -4,8 +4,7 @@
   const F = globalThis.FOB;
   F.step = W => {
     W.t++;
-    F.stepStaff(W);
-    if (W.t % 60 === 0) F.stepPlayer(W);
+    if (W.scn) F.stepOp(W); else { F.stepStaff(W); if (W.t % 60 === 0) F.stepPlayer(W); }
     F.stepEnemy(W);
     F.stepUnits(W);
     const hot = W.t % 5 === 0 || Object.values(W.units).some(u => u.con);

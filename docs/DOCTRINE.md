@@ -20,6 +20,36 @@ What the simulation models, the US Army practice it follows, and where it knowin
 
 The governing references for the next round of checking are ATP 3-21.8, *Infantry Rifle Platoon and Squad* (January 2024), and ATP 3-37.10, *Base Camps*.
 
+## Operations: what follows practice
+
+Checked against published doctrine only from general knowledge so far; to be verified against ATP 3-21.8, *Infantry Rifle Platoon and Squad*, before the next round.
+
+| In the simulation | Practice it follows |
+| --- | --- |
+| A raid is organised into an assault element, a support element and a security element (here the vehicle element at the drop, and in the platoon raid a blocking squad) | Raid organisation by task (general knowledge, unchecked) |
+| Elements move from the drop to an objective rally point, wait there, then move to their positions | Objective rally point and release of elements from it (general knowledge, unchecked) |
+| The support element occupies a support-by-fire position overlooking the objective and lifts fire when the assault reports the objective secure | Support by fire, lift and shift (general knowledge, unchecked) |
+| A blocking position isolates the objective from the likely escape and reinforcement routes | Isolation of the objective, cordon (general knowledge, unchecked) |
+| Code words for phases of the plan, and execution on time if the code is not received | Go codes and timed execution (general knowledge, unchecked; the Rainbow Six reference is the owner's) |
+| An element that is compromised initiates without waiting for the code | Contingency on compromise (general knowledge, unchecked) |
+| A captured or killed target is reported with the codeword JACKPOT | Common usage (general knowledge, unchecked) |
+| US forces fight at night with night vision; the enemy does not | Night vision devices issued to US infantry (general knowledge) |
+
+## Operations: known departures and simplifications
+
+- **Special Forces team.** Twelve, as an ODA, split six assault, three support with a machine gun, three drivers. Real raid forces are often larger and include attachments.
+- **Seats.** Vehicles carry any number of passengers. Real seating would need more vehicles for the platoon.
+- **Platoon headquarters.** The platoon leader, sergeant and radio operator are not modelled; the command post talks to each squad directly.
+- **Lift, not shift.** The support element stops firing when the assault reports secure; it does not shift fire to depth, and there is no fratricide.
+- **Assault.** The assault creeps in silently until compromised, then moves by rushes (twenty seconds moving, ten down and firing). No breaching, no room clearing; the compound is a point.
+- **Capture.** A target who is wounded, or alone or suppressed with an assaulter within 25 m, surrenders. A wounded target near a blocking or support position is collected once the shooting stops nearby.
+- **Search.** Fifteen minutes on the objective.
+- **Internal net.** Elements within 5 km and line of sight hear each other's reports at once; the command post gets them through the normal link.
+- **Manpack satellite radio.** Usable after a minute halted, 30 to 90 seconds delay. Real TACSAT voice is faster but needs the antenna up; the numbers are placeholders.
+- **Enemy alertness.** An unalerted guard at night notices far less (a factor of 0.15 on detection). Engines are heard 1.4 km away at night, 0.9 km by day; gunfire 3 km. All tuned by feel.
+- **The target's choice.** Woken by gunfire, the target hides in the compound about a third of the time and otherwise slips out after one to four minutes at night.
+- **Time cap.** An operation ends eight hours after H-hour if not everyone is back.
+
 ## Known departures and simplifications
 
 - **Staff titles.** S3 and S4 are battalion staff officers. A company-sized base would be run by a commander, executive officer, first sergeant and supply sergeant. The titles were kept because the brief asked for an operations officer and a logistics officer; the cleanest fix is to make the base a small battalion task force command post, or to rename the roles.
@@ -36,3 +66,4 @@ The governing references for the next round of checking are ATP 3-21.8, *Infantr
 - **Fires and aviation.** No mortars, artillery, attack aviation or unmanned aircraft.
 - **The enemy** is a generic irregular force with rifles, a machine gun and a rocket launcher per cell. Its behaviour follows no specific doctrine.
 - **Combat resolution** is statistical per round fired. Hit probabilities were tuned so that a few minutes of fighting between a squad and a cell produces a handful of casualties, not calibrated against data.
+- **Night fighting.** Friendly fire at night is 0.85 as accurate as by day, enemy fire 0.5, standing for night vision devices on one side only. This applies to the living base as well as to operations.

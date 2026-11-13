@@ -24,9 +24,12 @@ Read `docs/DESIGN.md` for the vision and decisions and `docs/DOCTRINE.md` for wh
 
 ```
 node --test tests/sim.test.js
+node tools/opprobe.js <scenario> <seed> [events]
 node tools/probe.js <seed> <hours> [op]
 python3 tools/build.py
 ```
+
+The operations manager (`ops.html`, `src/sim/ops.js`, `src/ui/ops.js`) is the current focus: one operation at a time on the shared engine. The living base (`index.html`) is kept working; operation worlds set `W.scn` and skip the base staff and logistics loop.
 
 ## Working agreement
 

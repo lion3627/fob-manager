@@ -7,19 +7,21 @@
   let cv, ctx, col = {}, dpr = 1, Wd = 0, Ht = 0;
   const X = x => (x - cam.x) * cam.s + Wd / 2, Y = y => Ht / 2 - (y - cam.y) * cam.s;
   UI.toWorld = (px, py) => ({ x: (px - Wd / 2) / cam.s + cam.x, y: (Ht / 2 - py) / cam.s + cam.y });
-  UI.readColors = () => { const cs = getComputedStyle(document.documentElement); ['map', 'ink', 'mute', 'line', 'accent', 'friend', 'host', 'ok', 'warn', 'contour', 'water', 'veg', 'raise'].forEach(k => { col[k] = cs.getPropertyValue('--' + k).trim(); }); };
+  UI.readColors = () => { const cs = getComputedStyle(document.documentElement); ['map', 'ink', 'mute', 'line', 'accent', 'friend', 'host', 'ok', 'warn', 'contour', 'water', 'veg', 'raise', 'el4'].forEach(k => { col[k] = cs.getPropertyValue('--' + k).trim(); }); };
   UI.initMap = el => {
     cv = el; ctx = cv.getContext('2d'); UI.readColors();
     const fit = () => { dpr = window.devicePixelRatio || 1; const r = cv.getBoundingClientRect(); Wd = r.width; Ht = r.height; cv.width = Math.round(Wd * dpr); cv.height = Math.round(Ht * dpr); };
     fit(); window.addEventListener('resize', fit); UI.fitMap = fit;
     let drag = null, pts = new Map(), pinch = 0;
-    cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY }); drag = { x: e.offsetX, y: e.offsetY, moved: 0 }; if (pts.size === 2) { const a = [...pts.values()]; pinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
+    let grab = false; // a page may claim a drag (a plan waypoint, say) instead of panning the map
+    cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY }); drag = { x: e.offsetX, y: e.offsetY, moved: 0 }; grab = pts.size === 1 && !!UI.onGrab && UI.onGrab(UI.toWorld(e.offsetX, e.offsetY), 12 / cam.s); if (pts.size === 2) { grab = false; const a = [...pts.values()]; pinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); } });
     cv.addEventListener('pointermove', e => {
+      if (grab && pts.has(e.pointerId)) { pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY }); if (drag) drag.moved += 7; UI.onGrabMove(UI.toWorld(e.offsetX, e.offsetY)); return; }
       if (!pts.has(e.pointerId)) return; const p = pts.get(e.pointerId), dx = e.offsetX - p.x, dy = e.offsetY - p.y; pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
       if (pts.size === 2) { const a = [...pts.values()], d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); if (pinch) zoom(d / pinch, (a[0].x + a[1].x) / 2, (a[0].y + a[1].y) / 2); pinch = d; return; }
       cam.x -= dx / cam.s; cam.y += dy / cam.s; if (drag) drag.moved += Math.abs(dx) + Math.abs(dy); if (drag && drag.moved > 6) cam.follow = null;
     });
-    const up = e => { pts.delete(e.pointerId); pinch = 0; if (drag && drag.moved < 6 && UI.onMapClick) UI.onMapClick(UI.toWorld(e.offsetX, e.offsetY), 14 / cam.s); drag = null; };
+    const up = e => { pts.delete(e.pointerId); pinch = 0; if (grab) { grab = false; if (UI.onGrabEnd) UI.onGrabEnd(); drag = null; return; } if (drag && drag.moved < 6 && UI.onMapClick) UI.onMapClick(UI.toWorld(e.offsetX, e.offsetY), 14 / cam.s); drag = null; };
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     cv.addEventListener('wheel', e => { e.preventDefault(); zoom(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.offsetX, e.offsetY); }, { passive: false });
   };
@@ -27,11 +29,12 @@
   UI.zoomBy = k => zoom(k, Wd / 2, Ht / 2);
   UI.look = (p, s) => { cam.x = p.x; cam.y = p.y; if (s) cam.s = s; };
 
-  const text = (t, x, y, c, f, al) => { ctx.font = f || '11px "B612 Mono", ui-monospace, monospace'; ctx.textAlign = al || 'left'; ctx.lineWidth = 3; ctx.strokeStyle = col.map; ctx.strokeText(t, x, y); ctx.fillStyle = c || col.ink; ctx.fillText(t, x, y); };
+  UI.X = X; UI.Y = Y; UI.col = col; UI.ctx = () => ctx; UI.scale = () => cam.s;
+  const text = UI.text = (t, x, y, c, f, al) => { ctx.font = f || '11px "B612 Mono", ui-monospace, monospace'; ctx.textAlign = al || 'left'; ctx.lineWidth = 3; ctx.strokeStyle = col.map; ctx.strokeText(t, x, y); ctx.fillStyle = c || col.ink; ctx.fillText(t, x, y); };
   function terrain(W) {
     ctx.fillStyle = col.map; ctx.fillRect(0, 0, Wd, Ht);
     const km = cam.s * 1000; if (km > 18) { ctx.strokeStyle = col.line; ctx.lineWidth = 0.5; ctx.globalAlpha = 0.5; ctx.beginPath(); for (let x = 0; x <= W.map.w; x += 1000) { ctx.moveTo(X(x), Y(0)); ctx.lineTo(X(x), Y(W.map.h)); } for (let y = 0; y <= W.map.h; y += 1000) { ctx.moveTo(X(0), Y(y)); ctx.lineTo(X(W.map.w), Y(y)); } ctx.stroke(); ctx.globalAlpha = 1; }
-    for (const z of W.map.cover) { ctx.beginPath(); ctx.arc(X(z.x), Y(z.y), z.r * cam.s, 0, 7); ctx.fillStyle = z.kind === 'village' ? col.contour : col.veg; ctx.globalAlpha = z.kind === 'village' ? 0.28 : 0.2; ctx.fill(); ctx.globalAlpha = 1; }
+    for (const z of W.map.cover) { ctx.beginPath(); ctx.arc(X(z.x), Y(z.y), z.r * cam.s, 0, 7); ctx.fillStyle = z.kind === 'village' ? col.contour : col.veg; ctx.globalAlpha = z.kind === 'village' ? 0.28 : 0.2; ctx.fill(); ctx.globalAlpha = 1; if (z.name && z.kind !== 'rough' && cam.s > 0.08) text(z.name.toUpperCase(), X(z.x), Y(z.y), col.mute, '700 11px "Saira Extra Condensed", "Arial Narrow", sans-serif', 'center'); }
     for (const b of W.map.blockers) { ctx.strokeStyle = col.contour; ctx.lineWidth = 1; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.ellipse(X(b.x), Y(b.y), b.r * cam.s * (1 - i * 0.18), b.r * cam.s * (1 - i * 0.18) * 0.82, -0.5, 0, 7); ctx.stroke(); } text(b.name.toUpperCase(), X(b.x), Y(b.y) + 4, col.mute, '700 11px "Saira Extra Condensed", "Arial Narrow", sans-serif', 'center'); }
     ctx.lineCap = 'round'; for (const pass of [[col.ink, 4.4, 8], [col.map, 2, 6]]) { ctx.strokeStyle = pass[0]; ctx.lineWidth = Math.max(pass[1], pass[2] * cam.s); ctx.beginPath(); for (const e of W.map.edges) { const a = W.map.nodes[e[0]], b = W.map.nodes[e[1]]; ctx.moveTo(X(a.x), Y(a.y)); ctx.lineTo(X(b.x), Y(b.y)); } ctx.stroke(); }
     for (const id in W.map.nodes) { const n = W.map.nodes[id]; if (n.kind === 'fob' && cam.s > 0.6) continue; ctx.fillStyle = n.kind === 'fob' ? col.friend : col.map; ctx.strokeStyle = col.ink; ctx.lineWidth = 1.5; ctx.beginPath(); if (n.kind === 'fob' || n.kind === 'depot') ctx.rect(X(n.x) - 6, Y(n.y) - 6, 12, 12); else ctx.arc(X(n.x), Y(n.y), 4, 0, 7); ctx.fill(); ctx.stroke(); text(n.name.toUpperCase(), X(n.x) + 10, Y(n.y) - 8, col.ink, '700 13px "Saira Extra Condensed", "Arial Narrow", sans-serif'); }
@@ -78,14 +81,14 @@
     for (const o of W.ops) if (o.status !== 'pending' && o.status !== 'done' && o.status !== 'aborted') { ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.arc(X(o.nai.x), Y(o.nai.y), 500 * cam.s, 0, 7); ctx.stroke(); const d = W.map.nodes[o.drop]; ctx.beginPath(); ctx.moveTo(X(d.x), Y(d.y)); ctx.lineTo(X(o.op.x), Y(o.op.y)); ctx.stroke(); ctx.setLineDash([]); text('NAI 1', X(o.nai.x), Y(o.nai.y) + 4, col.accent, '700 12px "Saira Extra Condensed", "Arial Narrow", sans-serif', 'center'); text('OP', X(o.op.x) + 6, Y(o.op.y), col.accent, '9px "B612 Mono", monospace'); }
     for (const c of H.contacts) { const age = W.t - c.t; if (age > 8 * F.H) continue; const x = X(c.pos.x), y = Y(c.pos.y); ctx.globalAlpha = age > 2 * F.H ? 0.4 : age > 1800 ? 0.7 : 1; ctx.fillStyle = col.host; ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x + 9, y); ctx.lineTo(x, y + 9); ctx.lineTo(x - 9, y); ctx.closePath(); ctx.fill(); text(`${c.size[0]}–${c.size[1]} · ${F.clock(c.t).slice(-4)} (${F.dur(age)} ago)`, x + 13, y + 4, col.host, '700 10px "B612 Mono", monospace'); ctx.globalAlpha = 1; }
     for (const id in H.units) {
-      const k = H.units[id], u = W.units[id]; if (u.kind === 'hq' || u.kind === 'support') continue; if (k.src === 'fob' && cam.s < 0.6) continue;
+      const k = H.units[id], u = W.units[id]; if (u.kind === 'hq' || u.kind === 'support') continue; if (k.src === 'fob' && cam.s < 0.6) continue; if (W.scn && W.op.status === 'planning') continue;
       const age = W.t - k.t, stale = age > 90; frame(X(k.pos.x), Y(k.pos.y) - (k.src === 'fob' ? 0 : 14), u.call, age > W.so.overdue ? col.host : col.friend, stale, k.src === 'fob' ? k.status : `${k.veh ? 'vehicles only · ' : ''}${k.src} ${stale ? F.dur(age) + ' ago' : 'now'}`, UI.sel === id);
     }
     for (const i of W.incidents) if (i.status === 'open') { ctx.strokeStyle = col.host; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(i.pos.x), Y(i.pos.y), 16 + (Date.now() / 120 % 8), 0, 7); ctx.stroke(); }
   }
   UI.draw = (W, truth) => {
     if (!ctx) return; if (cam.follow) { const u = W.units[cam.follow]; const p = truth ? (u && u.pos) : (W.hq.units[cam.follow] && W.hq.units[cam.follow].pos); if (p) { cam.x += (p.x - cam.x) * 0.2; cam.y += (p.y - cam.y) * 0.2; } }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); terrain(W); base(W, truth); if (truth) truthLayer(W); else knownLayer(W);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); terrain(W); base(W, truth); if (UI.under) UI.under(W, truth); if (truth) truthLayer(W); else knownLayer(W); if (UI.overlay) UI.overlay(W, truth);
     const m = 1000 * cam.s, bar = m > 160 ? 100 : m > 30 ? 1000 : 5000; ctx.strokeStyle = col.ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(14, Ht - 14); ctx.lineTo(14 + bar * cam.s, Ht - 14); ctx.stroke(); text(bar >= 1000 ? bar / 1000 + ' km' : bar + ' m', 14, Ht - 20, col.ink, '10px "B612 Mono", monospace');
     text(truth ? 'OBSERVER: THE WORLD AS IT IS' : 'COMMAND POST PICTURE: REPORTS, BEACONS AND BASE CAMERAS ONLY', Wd - 12, Ht - 14, truth ? col.host : col.friend, '700 10px "B612 Mono", monospace', 'right');
   };
