@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-phase="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOB Kestrel Ops Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&amp;family=B612+Mono:wght@400;700&amp;family=Saira+Extra+Condensed:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+/*CSS*/
+</style>
+</head>
+<body data-tab="map">
+<header id="top">
+  <div id="clock">D1 0600</div>
+  <div class="seg" id="speed" role="group" aria-label="Clock speed">
+    <button data-a="speed:0" data-v="0" aria-pressed="true" title="Stop the clock">Pause</button>
+    <button data-a="speed:1" data-v="1" aria-pressed="false" title="5 game minutes per second">1×</button>
+    <button data-a="speed:2" data-v="2" aria-pressed="false" title="30 game minutes per second">6×</button>
+    <button data-a="speed:3" data-v="3" aria-pressed="false" title="2.5 game hours per second">30×</button>
+  </div>
+  <button id="menuBtn" data-a="sheet:menu" aria-label="Menu">≡</button>
+</header>
+<div id="strip" aria-label="Stocks and status"></div>
+<div id="why" role="status"></div>
+<main id="main">
+  <section id="mapPane" aria-label="Map">
+    <div id="mapWrap"><svg id="map" viewBox="0 0 336 468" role="img" aria-label="Map of AO Kestrel"></svg></div>
+    <div id="info"></div>
+  </section>
+  <section id="side" aria-label="Staff panels">
+    <nav id="sideTabs" aria-label="Panels">
+      <button data-a="tab:force">Force</button><button data-a="tab:intel">Intel</button><button data-a="tab:support">Support</button><button data-a="tab:net">Net</button>
+    </nav>
+    <div id="panel"></div>
+  </section>
+</main>
+<nav id="nav" aria-label="Views">
+  <button data-a="tab:map">Map</button><button data-a="tab:force">Force</button><button data-a="tab:intel">Intel</button><button data-a="tab:support">Support</button><button data-a="tab:net">Net</button>
+</nav>
+<div id="sheet"><div id="sheetIn" role="dialog" aria-modal="true" aria-label="Dialog"></div></div>
+<script>
+/*SIM*/
+</script>
+<script>
+/*UI*/
+</script>
+</body>
+</html>
