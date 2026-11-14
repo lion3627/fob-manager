@@ -1,0 +1,27 @@
+L1	pass	evidence/drone-zoom-setup.png	White-hot thermal, warm figures with heads and moving limbs, flashes, orbit, reticle, telemetry; green NV cams with grain. IR strobes blink on the NV cams only (a thermal camera cannot see them); the drone uses Blue Force Tracker boxes instead.
+L2	pass	index.html:878	ISR feed conventions (white hot, telemetry, track box, grid) drawn in drawDrone; plan-then-watch as in the references.
+L3	pass	evidence/play.png	2D top-down sensor view with drag slew, wheel zoom, slow orbit; first-person helmet-cam panels.
+F1	pass	evidence/drone-zoom-setup.png	Drag/arrow slew, wheel/+- zoom, orbit (index.html:371), click or Tab to track; people under roofs are not drawn (droneSees).
+F2	pass	evidence/alley-cam.png	Raycast green NV from A-1, B-1, C-1 helmets (index.html:948), keys 1-4 or click to make one the main feed.
+F3	pass	index.html:710	GFC phase machine: infil, isolate, breach, clear rooms with two elements, SSE, exfil (gfc, clearTick at index.html:684).
+F4	pass	index.html:654	Gate 1 at the release point and gate 2 before the breach; G/W/X or buttons; WAIT re-asks after waitAsk; contact adds a third gate.
+F5	pass	index.html:448	Dog barks at moving soldiers, someone climbs to the roof to look (index.html:457), guards fight, family hides, target flees when warned (index.html:527).
+F6	pass	index.html:248	present / nextdoor / setup drawn from the seed with weights in config.js; setup puts three fighters on the north roof.
+F7	pass	index.html:758	R then click: reserve mounts its truck and blocks; I sends the nearest of B, C or R after the tracked person (index.html:765).
+F8	pass	evidence/play.png	Muzzle flashes on both feeds (index.html:567), hits as WIA/KIA lying figures, after-action screen (index.html:1182).
+S1	pass	evidence/drone-zoom-setup.png	Thermal drone feed in the slice.
+S2	pass	evidence/alley-cam.png	Helmet cams in the slice.
+S3	pass	index.html:654	Go, wait and abort in the slice.
+M1	pass	evidence/play.png	Clock starts 02:30:00L.
+M2	pass	evidence/play.png	Teams walk from the trucks in file (staggered starts, index.html:331); strobes blink on the NV cams.
+M3	pass	index.html:448	The dog barks when soldiers move within dogHear; GFC reports it.
+M4	pass	index.html:718	At the release point the GFC asks GO to isolate.
+M5	pass	evidence/drone-zoom-setup.png	Two men awake by the gate, one with a glowing cigarette ember; a rifle is the only tell between the guard and the nephew (index.html spawn).
+M6	pass	index.html:654	G answers GO.
+M7	pass	evidence/alley-cam.png	B and C move round the walls to the corners and alley mouths.
+M8	not_assessed	-	Marker line in the brief with no content of its own.
+C1	pass	index.html:248	Truth chosen by the seed; ?truth= forces one for testing.
+C2	pass	index.html:409	Waiting: random waking, dog barks bring someone up on the roof, and the target moves on by himself between leaveMin and leaveMax. No phone call is modelled.
+C3	pass	index.html:765	A runner can be tracked and intercepted; the nearest of B, C or R goes, so a cordon team leaving opens its side.
+C4	pass	index.html:733	Debrief counts the target result, friendly, civilian and enemy casualties, detainees and time.
+C5	not_assessed	-	Marker line in the brief with no content of its own.

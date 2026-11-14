@@ -1,0 +1,71 @@
+time	2026-11-14 06:10:44
+keep	lines	0	pinned	0
+checklist	L1	pass	evidence/drone-zoom-setup.png	Look: a white-hot thermal drone feed, grey terrain, walls and roofs, people as warm figures with heads and moving limbs, friendly soldiers with blinking IR strobes, muzzle flashes as bright pulses, a slow orbit, reticle and telemetry. Helmet cams as low-resolution green night-vision views from the team leaders' eyes, with grain. Every figure drawn, no emoji, no plain circles. *(provisional)*	White-hot thermal, warm figures with heads and moving limbs, flashes, orbit, reticle, telemetry; green NV cams with grain. IR strobes blink on the NV cams only (a thermal camera cannot see them); the drone uses Blue Force Tracker boxes instead.
+checklist	L2	pass	index.html:878	References: Door Kickers and the original Rainbow Six (plan, then watch it unfold); real ISR feed conventions (white-hot, telemetry, IR strobes). *(inferred (strong))*	ISR feed conventions (white hot, telemetry, track box, grid) drawn in drawDrone; plan-then-watch as in the references.
+checklist	L3	pass	evidence/play.png	View: 2D · Camera: top-down drone sensor with slew, zoom and a slow orbit; first-person helmet-cam panels. *(provisional)*	2D top-down sensor view with drag slew, wheel zoom, slow orbit; first-person helmet-cam panels.
+checklist	F1	pass	evidence/drone-zoom-setup.png	A drone thermal feed with slew, zoom, orbit and tracking, blind under roofs	Drag/arrow slew, wheel/+- zoom, orbit (index.html:371), click or Tab to track; people under roofs are not drawn (droneSees).
+checklist	F2	pass	evidence/alley-cam.png	Three helmet cams rendering the team leaders' view in green night vision	Raycast green NV from A-1, B-1, C-1 helmets (index.html:948), keys 1-4 or click to make one the main feed.
+checklist	F3	pass	index.html:710	A ground force that walks in, isolates, breaches and clears on its own	GFC phase machine: infil, isolate, breach, clear rooms with two elements, SSE, exfil (gfc, clearTick at index.html:684).
+checklist	F4	pass	index.html:654	Gates at the release point and before the breach: go, wait, abort	Gate 1 at the release point and gate 2 before the breach; G/W/X or buttons; WAIT re-asks after waitAsk; contact adds a third gate.
+checklist	F5	pass	index.html:448	A compound that reacts: a dog, guards, a family, a target who runs when warned	Dog barks at moving soldiers, someone climbs to the roof to look (index.html:457), guards fight, family hides, target flees when warned (index.html:527).
+checklist	F6	pass	index.html:248	Three possible truths behind the tip: right, next door, a setup	present / nextdoor / setup drawn from the seed with weights in config.js; setup puts three fighters on the north roof.
+checklist	F7	pass	index.html:758	A reserve you can release, and intercept orders for a tracked runner	R then click: reserve mounts its truck and blocks; I sends the nearest of B, C or R after the tracked person (index.html:765).
+checklist	F8	pass	evidence/play.png	Gunfire seen as flashes, casualties, a debrief at the end	Muzzle flashes on both feeds (index.html:567), hits as WIA/KIA lying figures, after-action screen (index.html:1182).
+checklist	S1	pass	evidence/drone-zoom-setup.png	thermal drone feed · in the slice	Thermal drone feed in the slice.
+checklist	S2	pass	evidence/alley-cam.png	helmet cams · in the slice	Helmet cams in the slice.
+checklist	S3	pass	index.html:654	go, wait and abort calls · in the slice	Go, wait and abort in the slice.
+checklist	M1	pass	evidence/play.png	0230.	Clock starts 02:30:00L.
+checklist	M2	pass	evidence/play.png	The drone feed shows the target compound cold and quiet; the helmet cams show three teams walking in file from the vehicles, strobes blinking.	Teams walk from the trucks in file (staggered starts, index.html:331); strobes blink on the NV cams.
+checklist	M3	pass	index.html:448	A dog in the courtyard lifts its head.	The dog barks when soldiers move within dogHear; GFC reports it.
+checklist	M4	pass	index.html:718	The ground force commander reports at the release point and asks to isolate: go or wait.	At the release point the GFC asks GO to isolate.
+checklist	M5	pass	evidence/drone-zoom-setup.png	You watch the courtyard: two warm figures by the gate, one smoking.	Two men awake by the gate, one with a glowing cigarette ember; a rifle is the only tell between the guard and the nephew (index.html spawn).
+checklist	M6	pass	index.html:654	Go.	G answers GO.
+checklist	M7	pass	evidence/alley-cam.png	The cordon teams slip around the walls.	B and C move round the walls to the corners and alley mouths.
+checklist	M8	not_assessed	-	*(guessed)*	Marker line in the brief with no content of its own.
+checklist	C1	pass	index.html:248	The tip is right, wrong (he is next door) or a setup (fighters on a nearby roof), chosen by the seed.	Truth chosen by the seed; ?truth= forces one for testing.
+checklist	C2	pass	index.html:409	Waiting to watch costs time and raises the chance a dog, a man on the roof or a phone call gives you away.	Waiting: random waking, dog barks bring someone up on the roof, and the target moves on by himself between leaveMin and leaveMax. No phone call is modelled.
+checklist	C3	pass	index.html:765	A runner over the back wall forces a choice: send the south cordon after him and open a gap, or release the reserve.	A runner can be tracked and intercepted; the nearest of B, C or R goes, so a cordon team leaving opens its side.
+checklist	C4	pass	index.html:733	A loss is the target escaping, an empty house, or casualties; the debrief counts them.	Debrief counts the target result, friendly, civilian and enemy casualties, detainees and time.
+checklist	C5	not_assessed	-	*(provisional)*	Marker line in the brief with no content of its own.
+browser	HeadlessChrome/153.0.0.0
+scene	play	0	title
+scene	play	1	play
+digits	log	18px "DejaVu Sans Mono", Consolas, "Courier New", monospace	tabular	0
+digits	log	17px "DejaVu Sans Mono", Consolas, "Courier New", monospace	tabular	0
+digits	log	14px "DejaVu Sans Mono", Consolas, "Courier New", monospace	tabular	0
+digits	log	bold 12px "DejaVu Sans Mono", Consolas, "Courier New", monospace	tabular	0
+digits	log	bold 15px "DejaVu Sans Mono", Consolas, "Courier New", monospace	tabular	0
+digits	log	15px "DejaVu Sans Mono", Consolas, "Courier New", monospace	tabular	0
+measure	step-time	play	0.413	202.000	538
+lane	play	stop	9.0	699
+uncaught	play	0
+text	play	canvas	308,132,315,140	19.5	10.12	inside	A
+text	play	canvas	303,100,309,108	19.5	10.20	inside	B
+text	play	canvas	277,146,283,155	19.5	10.20	inside	C
+text	play	canvas	209,66,215,74	19.5	9.09	inside	R
+text	play	canvas	813,65,819,73	19.5	15.72	inside	N
+text	play	canvas	159,29,322,40	22.5	14.94	inside	MQ-1C  IR  WHT HOT  NFOV
+text	play	canvas	159,45,355,56	22.5	14.55	inside	ALT 9,500 FT   SLT RNG 4.4 KM
+text	play	canvas	755,29,816,39	22.5	15.52	inside	02:30:19L
+text	play	canvas	756,45,816,55	22.5	15.33	inside	ZOOM 1.0x
+text	play	canvas	159,440,328,449	22.5	17.04	inside	TGT GRID 41S PR 4860 5480
+text	play	canvas	858,7,985,15	18.0	18.34	inside	2  HELMET A-1  ASSAULT
+text	play	canvas	858,168,991,176	18.0	18.34	inside	3  HELMET B-1  N CORDON
+text	play	canvas	858,329,991,337	18.0	18.34	inside	4  HELMET C-1  S CORDON
+text	play	canvas	137,561,607,574	22.5	12.21	inside	02:30:00 GFC: Dismounted at the drop-off. Moving to the rele
+text	play	canvas	137,549,614,561	22.5	11.82	inside	02:30:00 UAV: Gray Eagle on station over OBJ RAVEN. Thermal,
+text	play	canvas	756,486,1057,500	22.5	7.83	inside	Click the drone feed to place the reserve.
+text	play	canvas	786,522,800,533	22.5	5.64	inside	GO
+text	play	canvas	785,537,800,547	19.5	5.64	inside	[G]
+text	play	canvas	857,523,886,532	22.5	5.64	inside	WAIT
+text	play	canvas	864,537,879,547	19.5	5.64	inside	[W]
+text	play	canvas	932,522,968,533	22.5	6.32	inside	ABORT
+text	play	canvas	942,537,957,547	19.5	6.32	inside	[X]
+text	play	canvas	1003,522,1054,533	22.5	8.47	inside	RESERVE
+text	play	canvas	1021,537,1036,547	19.5	8.47	inside	[R]
+text	play	canvas	1075,522,1140,533	22.5	5.64	inside	INTERCEPT
+text	play	canvas	1099,537,1114,547	19.5	5.64	inside	[I]
+text	play	canvas	755,560,1147,571	22.5	6.53	inside	02:30:19L   TIME x3   [T] fast  [Space] pause  [1-4] feeds
+screen	play	drawn
+responds	changed	124
+shot	play	evidence/play.png

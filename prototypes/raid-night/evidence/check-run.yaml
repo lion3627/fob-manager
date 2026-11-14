@@ -1,0 +1,149 @@
+# The one-shot's small check (check-run/1).
+# Written by one-shot-check.sh --record: the results are /prototype's reading of
+# evidence/self-check.tsv; never edited by hand.
+kind: check-run/1
+engine: web
+browser: "HeadlessChrome/153.0.0.0"
+time: "2026-11-14 06:10:44"
+checks:
+  - id: boots
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: shot
+    result: pass
+    evidence:
+      - "evidence/play.png"
+  - id: outlines
+    result: pass
+    evidence:
+      - "evidence/figures.png"
+  - id: brief-words
+    result: pass
+    evidence:
+      - "evidence/brief-words.tsv"
+  - id: emoji
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: nearest-game
+    result: pass
+    evidence:
+      - "evidence/nearest-game.txt"
+brief_checklist:
+  - id: L1
+    result: pass
+    evidence: "evidence/drone-zoom-setup.png"
+    item: "Look: a white-hot thermal drone feed, grey terrain, walls and roofs, people as warm figures with heads and moving limbs, friendly soldiers with blinking IR strobes, muzzle flashes as bright pulses, a slow orbit, reticle and telemetry. Helmet cams as low-resolution green night-vision views from the team leaders' eyes, with grain. Every figure drawn, no emoji, no plain circles. *(provisional)*"
+  - id: L2
+    result: pass
+    evidence: "index.html:878"
+    item: "References: Door Kickers and the original Rainbow Six (plan, then watch it unfold); real ISR feed conventions (white-hot, telemetry, IR strobes). *(inferred (strong))*"
+  - id: L3
+    result: pass
+    evidence: "evidence/play.png"
+    item: "View: 2D · Camera: top-down drone sensor with slew, zoom and a slow orbit; first-person helmet-cam panels. *(provisional)*"
+  - id: F1
+    result: pass
+    evidence: "evidence/drone-zoom-setup.png"
+    item: "A drone thermal feed with slew, zoom, orbit and tracking, blind under roofs"
+  - id: F2
+    result: pass
+    evidence: "evidence/alley-cam.png"
+    item: "Three helmet cams rendering the team leaders' view in green night vision"
+  - id: F3
+    result: pass
+    evidence: "index.html:710"
+    item: "A ground force that walks in, isolates, breaches and clears on its own"
+  - id: F4
+    result: pass
+    evidence: "index.html:654"
+    item: "Gates at the release point and before the breach: go, wait, abort"
+  - id: F5
+    result: pass
+    evidence: "index.html:448"
+    item: "A compound that reacts: a dog, guards, a family, a target who runs when warned"
+  - id: F6
+    result: pass
+    evidence: "index.html:248"
+    item: "Three possible truths behind the tip: right, next door, a setup"
+  - id: F7
+    result: pass
+    evidence: "index.html:758"
+    item: "A reserve you can release, and intercept orders for a tracked runner"
+  - id: F8
+    result: pass
+    evidence: "evidence/play.png"
+    item: "Gunfire seen as flashes, casualties, a debrief at the end"
+  - id: S1
+    result: pass
+    evidence: "evidence/drone-zoom-setup.png"
+    item: "thermal drone feed · in the slice"
+  - id: S2
+    result: pass
+    evidence: "evidence/alley-cam.png"
+    item: "helmet cams · in the slice"
+  - id: S3
+    result: pass
+    evidence: "index.html:654"
+    item: "go, wait and abort calls · in the slice"
+  - id: M1
+    result: pass
+    evidence: "evidence/play.png"
+    item: "0230."
+  - id: M2
+    result: pass
+    evidence: "evidence/play.png"
+    item: "The drone feed shows the target compound cold and quiet; the helmet cams show three teams walking in file from the vehicles, strobes blinking."
+  - id: M3
+    result: pass
+    evidence: "index.html:448"
+    item: "A dog in the courtyard lifts its head."
+  - id: M4
+    result: pass
+    evidence: "index.html:718"
+    item: "The ground force commander reports at the release point and asks to isolate: go or wait."
+  - id: M5
+    result: pass
+    evidence: "evidence/drone-zoom-setup.png"
+    item: "You watch the courtyard: two warm figures by the gate, one smoking."
+  - id: M6
+    result: pass
+    evidence: "index.html:654"
+    item: "Go."
+  - id: M7
+    result: pass
+    evidence: "evidence/alley-cam.png"
+    item: "The cordon teams slip around the walls."
+  - id: M8
+    result: not_run
+    mark: not assessed
+    why: "Marker line in the brief with no content of its own."
+    item: "*(guessed)*"
+  - id: C1
+    result: pass
+    evidence: "index.html:248"
+    item: "The tip is right, wrong (he is next door) or a setup (fighters on a nearby roof), chosen by the seed."
+  - id: C2
+    result: pass
+    evidence: "index.html:409"
+    item: "Waiting to watch costs time and raises the chance a dog, a man on the roof or a phone call gives you away."
+  - id: C3
+    result: pass
+    evidence: "index.html:765"
+    item: "A runner over the back wall forces a choice: send the south cordon after him and open a gap, or release the reserve."
+  - id: C4
+    result: pass
+    evidence: "index.html:733"
+    item: "A loss is the target escaping, an empty house, or casualties; the debrief counts them."
+  - id: C5
+    result: not_run
+    mark: not assessed
+    why: "Marker line in the brief with no content of its own."
+    item: "*(provisional)*"
+measures:
+  - id: step-time
+    value: 202.000
+    unit: ms
+    by: browser
+    detail: "mean 0.413 ms, slowest 202.000 ms, 538 steps"

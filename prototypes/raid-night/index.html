@@ -1,0 +1,1270 @@
+<!doctype html>
+<!-- PROTOTYPE - NOT FOR PRODUCTION -->
+<!-- Question: Is watching a night raid through the drone and helmet cams, with go, wait, abort and reserve calls, tense and full of real decisions? -->
+<!-- Date: 2026-11-14 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raid Night</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-variant-numeric: tabular-nums; }
+  canvas { display: block; margin: 0 auto; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script src="config.js"></script>
+<script>
+'use strict';
+// ---- Built to be checked ----------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const tune = new Proxy({}, { get: (_, k) => CONFIG[k].value });
+const STEP = 1 / 60;
+const W = 1280, H = 720;
+const PIXEL = false;
+const FONT = '"DejaVu Sans Mono", Consolas, "Courier New", monospace';
+const TITLE = 'RAID NIGHT';
+const CONTROLS = [
+  'Drag: slew the drone camera   Wheel: zoom   Click a figure: track it',
+  'G: GO   W: WAIT   X: ABORT (when the ground force commander asks)',
+  'R then click: send the reserve   I: intercept the tracked person',
+  '1-4 or click a panel: main feed   T: fast time   Space: pause   M: mute',
+];
+const clock = window.GAME_CLOCK || { now: () => performance.now() / 1000 };
+let seed, runSeed = Number(params.get('seed')) || CONFIG.seed;
+function rng() { // mulberry32; every gameplay random call reads this, never Math.random
+  seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function hash2(x, y) { // looks only (grain, texture), never gameplay
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+const events = [];
+
+// ---- Screen ---------------------------------------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let SCALE = 1;
+function fit() {
+  const k = Math.min(innerWidth / W, innerHeight / H);
+  const r = k * (devicePixelRatio || 1); SCALE = k;
+  canvas.width = Math.round(W * r); canvas.height = Math.round(H * r);
+  canvas.style.width = Math.round(W * k) + 'px'; canvas.style.height = Math.round(H * k) + 'px';
+  canvas.style.marginTop = Math.max(0, Math.floor((innerHeight - H * k) / 2)) + 'px';
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.imageSmoothingEnabled = true;
+}
+addEventListener('resize', fit); fit();
+function clear(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function text(s, x, y, size, c, align = 'center', bold = false) {
+  ctx.fillStyle = c; ctx.font = `${bold ? 'bold ' : ''}${size}px ${FONT}`; ctx.textAlign = align;
+  ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+}
+
+// ---- Input ------------------------------------------------------------------------------
+const down = new Set(), hit = new Set();
+const pressed = code => hit.has(code);
+addEventListener('keydown', e => {
+  startAudio();
+  if (!e.repeat) { down.add(e.code); hit.add(e.code); }
+  if (e.code === 'Space' || e.code === 'Tab' || e.code.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => down.delete(e.code));
+addEventListener('blur', () => down.clear());
+
+// ---- Audio --------------------------------------------------------------------------------
+let audio = null, muted = false, noiseBuf = null;
+function startAudio() {
+  if (!audio) {
+    const ac = window.GAME_AUDIO || new (window.AudioContext || window.webkitAudioContext)();
+    const out = ac.createGain(); out.gain.value = muted ? 0 : tune.volume;
+    out.connect(ac.destination); audio = { ac, out };
+  }
+  if (audio.ac.state === 'suspended') audio.ac.resume();
+}
+function setMuted(m) { muted = m; if (audio) audio.out.gain.value = m ? 0 : tune.volume; }
+addEventListener('tune', () => setMuted(muted));
+function tone(freq, dur, type = 'square', vol = 0.3, delay = 0) {
+  if (!audio || muted) return;
+  const t = audio.ac.currentTime + delay, o = audio.ac.createOscillator(), g = audio.ac.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.out); o.start(t); o.stop(t + dur);
+}
+function noise(dur, vol, freq) {
+  if (!audio || muted || vol < 0.01) return;
+  const ac = audio.ac;
+  if (!noiseBuf) {
+    noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = hash2(i, 7) * 2 - 1;
+  }
+  const src = ac.createBufferSource(); src.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
+  const g = ac.createGain(), t = ac.currentTime;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(f).connect(g).connect(audio.out); src.start(t); src.stop(t + dur);
+}
+
+// ================================================================================================
+// THE WORLD: a 200 x 140 m village, 1 m per cell. True state; the player only sees it through feeds.
+// ================================================================================================
+const MW = 200, MH = 140;
+const GR = 0, WALL = 1, ROOF = 2, DOOR = 3, FIELD = 4, WADI = 5, TRACK = 6, GATE = 7;
+let G = new Uint8Array(MW * MH);
+const at = (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? -1 : G[(y | 0) * MW + (x | 0)];
+const put = (x, y, t) => { G[y * MW + x] = t; };
+function rect(t, x0, y0, x1, y1) { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) put(x, y, t); }
+function box(x0, y0, x1, y1) { rect(WALL, x0, y0, x1, y0); rect(WALL, x0, y1, x1, y1); rect(WALL, x0, y0, x0, y1); rect(WALL, x1, y0, x1, y1); }
+function house(x0, y0, x1, y1) { rect(ROOF, x0, y0, x1, y1); box(x0, y0, x1, y1); }
+const CMP = { T: [100, 55, 130, 85], E: [135, 58, 158, 84], N: [100, 30, 126, 50] };
+const ROOMS = {
+  CY: { name: 'Courtyard', b: [101, 65, 119, 84], pts: [[104, 68], [108, 72], [112, 67], [105, 76]] },
+  CY2: { name: 'South courtyard', b: [101, 65, 119, 84], pts: [[104, 82], [110, 81], [116, 78], [114, 83]] },
+  R1: { name: 'Room 1', b: [101, 56, 109, 63], pts: [[103, 58], [107, 58], [103, 62], [107, 61]] },
+  R2: { name: 'Room 2', b: [111, 56, 119, 63], pts: [[113, 58], [117, 58], [113, 62], [117, 61]] },
+  R3: { name: 'Room 3', b: [121, 56, 129, 63], pts: [[123, 58], [127, 58], [123, 62], [127, 61]] },
+  R4: { name: 'Room 4', b: [121, 65, 129, 74], pts: [[123, 67], [127, 67], [123, 72], [127, 72]] },
+  R5: { name: 'Room 5', b: [121, 76, 129, 84], pts: [[123, 78], [127, 78], [123, 82], [127, 82]] },
+};
+const POSTS = {
+  RP_A: [[70, 70], [71, 71], [69, 71], [70, 72], [68, 70], [68, 72], [67, 71], [69, 69]],
+  RP_B: [[66, 64], [67, 65], [65, 65], [66, 66], [64, 64], [64, 66]],
+  RP_C: [[66, 76], [67, 77], [65, 77], [66, 78], [64, 76], [64, 78]],
+  B: [[132, 52, 1.57], [133, 53, 0], [124, 52, 3.14], [117, 53, 3.14], [110, 52, 0], [101, 53, 0]], // corners and the alley mouth, each watching along a wall
+  C: [[132, 88, -1.57], [133, 89, 0], [124, 88, 3.14], [117, 87, 3.14], [110, 88, 0], [101, 87, 0]],
+  STACK: [[99, 68], [99, 67], [99, 66], [98, 67], [98, 66], [98, 65], [97, 66], [97, 65]],
+  DROP_A: [[12, 69], [13, 70], [12, 71], [14, 69], [14, 71], [15, 70], [16, 69], [16, 71]],
+  DROP_B: [[8, 65], [9, 66], [10, 65], [8, 67], [10, 67], [9, 64]],
+  DROP_C: [[8, 75], [9, 76], [10, 75], [8, 77], [10, 77], [9, 74]],
+  DROP_R: [[5, 66], [6, 67], [5, 68], [6, 72], [5, 73], [6, 74]],
+};
+const DROP = [10, 70];
+function buildMap() {
+  G = new Uint8Array(MW * MH);
+  rect(FIELD, 0, 108, 199, 139); rect(WADI, 0, 124, 199, 131); rect(TRACK, 0, 69, 95, 71);
+  // OBJ RAVEN, the compound of Haji Wali
+  box(100, 55, 130, 85);
+  house(100, 55, 130, 64); rect(WALL, 110, 55, 110, 64); rect(WALL, 120, 55, 120, 64);
+  house(120, 64, 130, 85); rect(WALL, 120, 75, 130, 75);
+  put(105, 64, DOOR); put(115, 64, DOOR); put(120, 59, DOOR); put(120, 70, DOOR); put(120, 80, DOOR);
+  put(130, 59, GATE); rect(GATE, 100, 69, 100, 71);
+  // the compound next door (east) and the one to the north
+  box(135, 58, 158, 84); house(135, 58, 158, 66); put(146, 66, DOOR); rect(GATE, 135, 71, 135, 72);
+  box(100, 30, 126, 50); house(100, 30, 126, 40); put(113, 40, DOOR); rect(GATE, 112, 50, 113, 50);
+  // the rest of the village
+  box(56, 38, 80, 58); house(56, 38, 70, 48); put(63, 48, DOOR); rect(GATE, 66, 58, 67, 58);
+  box(36, 86, 62, 104); house(36, 86, 48, 104); put(48, 95, DOOR); rect(GATE, 55, 86, 56, 86);
+  box(165, 30, 192, 52); house(176, 30, 192, 42); put(184, 42, DOOR); rect(GATE, 165, 40, 165, 41);
+  box(165, 88, 190, 106); house(165, 96, 178, 106); put(171, 96, DOOR); rect(GATE, 180, 88, 181, 88);
+}
+const inB = (p, b) => p.x >= b[0] && p.x < b[2] + 1 && p.y >= b[1] && p.y < b[3] + 1;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---- Paths: A* on the grid. Gates are locked to soldiers until breached. --------------------
+const PN = MW * MH, gS = new Float32Array(PN), from = new Int32Array(PN), stamp = new Int32Array(PN), shut = new Int32Array(PN);
+let gen = 0; const hf = [], hi = [];
+const DX = [1, -1, 0, 0, 1, 1, -1, -1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
+const pass = (t, side) => t >= 0 && t !== WALL && (t !== GATE || side !== 'blue');
+function hpush(f, i) { hf.push(f); hi.push(i); let k = hf.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (hf[p] <= hf[k]) break; [hf[p], hf[k]] = [hf[k], hf[p]]; [hi[p], hi[k]] = [hi[k], hi[p]]; k = p; } }
+function hpop() {
+  const top = hi[0], lf = hf.pop(), li = hi.pop();
+  if (hf.length) { hf[0] = lf; hi[0] = li; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < hf.length && hf[l] < hf[m]) m = l; if (r < hf.length && hf[r] < hf[m]) m = r; if (m === k) break; [hf[m], hf[k]] = [hf[k], hf[m]]; [hi[m], hi[k]] = [hi[k], hi[m]]; k = m; } }
+  return top;
+}
+function nearestPass(x, y, side) {
+  x = clamp(x | 0, 0, MW - 1); y = clamp(y | 0, 0, MH - 1);
+  if (pass(at(x, y), side)) return [x, y];
+  for (let r = 1; r < 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (pass(at(x + dx, y + dy), side)) return [x + dx, y + dy];
+  return [x, y];
+}
+function findPath(sx, sy, tx, ty, side) {
+  sx = clamp(sx | 0, 0, MW - 1); sy = clamp(sy | 0, 0, MH - 1);
+  [tx, ty] = nearestPass(tx, ty, side);
+  gen++; hf.length = 0; hi.length = 0;
+  const s = sy * MW + sx, goal = ty * MW + tx;
+  gS[s] = 0; stamp[s] = gen; from[s] = -1; hpush(0, s);
+  while (hf.length) {
+    const cur = hpop(); if (cur === goal) break;
+    if (shut[cur] === gen) continue; shut[cur] = gen;
+    const cx = cur % MW, cy = (cur / MW) | 0;
+    for (let k = 0; k < 8; k++) {
+      const nx = cx + DX[k], ny = cy + DY[k];
+      if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
+      const t = G[ny * MW + nx]; if (!pass(t, side)) continue;
+      if (k >= 4 && (!pass(G[cy * MW + nx], side) || !pass(G[ny * MW + cx], side))) continue;
+      const ni = ny * MW + nx, ng = gS[cur] + (k >= 4 ? 1.414 : 1);
+      if (stamp[ni] !== gen || ng < gS[ni]) {
+        stamp[ni] = gen; gS[ni] = ng; from[ni] = cur;
+        const ddx = Math.abs(nx - tx), ddy = Math.abs(ny - ty);
+        hpush(ng + Math.max(ddx, ddy) + 0.414 * Math.min(ddx, ddy), ni);
+      }
+    }
+  }
+  if (stamp[goal] !== gen) return [];
+  const out = []; for (let i = goal; i !== -1 && i !== s; i = from[i]) out.push([i % MW + 0.5, ((i / MW) | 0) + 0.5]);
+  return out.reverse();
+}
+// Line of sight: walls and closed gates block. Someone on a roof sees over walls, but not into rooms.
+function los(a, b) {
+  const elev = a.onRoof || b.onRoof;
+  if (elev) {
+    if (!a.onRoof && at(a.x, a.y) === ROOF) return false;
+    if (!b.onRoof && at(b.x, b.y) === ROOF) return false;
+    return true;
+  }
+  const d = dist(a, b), n = Math.ceil(d / 0.4);
+  for (let i = 1; i < n; i++) {
+    const t = at(a.x + (b.x - a.x) * i / n, a.y + (b.y - a.y) * i / n);
+    if (t === WALL || t === GATE || t < 0) return false;
+  }
+  return true;
+}
+
+// ================================================================================================
+// THE NIGHT: who is where. The tip is uncertain: three truths, drawn from the seed.
+// ================================================================================================
+let scene, state;
+const A = id => state.actors[id];
+function mk(o) {
+  const a = Object.assign({ id: state.actors.length, side: 'civ', role: 'man', name: '', desc: '', x: 0, y: 0, face: 0, look: 0,
+    path: null, pi: 0, spd: 0, moving: false, gait: 0, hp: 'ok', state: 'idle', posture: 'stand', armed: false, hostile: false,
+    awake: true, alarm: false, onRoof: false, fireCd: 0, firedT: -99, detained: false, secured: false, surr: false, gone: false,
+    mounted: false, team: null, post: null, postFace: null, endFace: null, delay: 0, pending: false, job: null, cmp: null,
+    fleeAt: null, deathT: 0, reported: false, peekUntil: 0 }, o);
+  a.look = a.face; state.actors.push(a); return a;
+}
+function reset() {
+  seed = runSeed;
+  buildMap(); buildBase();
+  const sum = tune.pPresent + tune.pNextDoor + tune.pSetup, r = rng() * sum;
+  const truth = params.get('truth') || (r < tune.pPresent ? 'present' : r < tune.pPresent + tune.pNextDoor ? 'nextdoor' : 'setup');
+  state = {
+    t: 0, score: 0, gained: '', truth, actors: [], teams: {}, radio: [], fx: [], phase: 'infil', ask: null, waitKind: null, waitUntil: 0,
+    held: false, pendingGate: null, asked1: false, asked2: false, breached: false, breachAt: 0, breachT: -99, contact: false, contactAsked: false,
+    dogBarks: 0, lastBark: -99, lastDogReport: -99, lastMoveSeen: -99, alarm: {}, abortArm: -99, placing: false, hint: '', hintUntil: 0,
+    bft: [], bftT: -99, leaveAt: tune.leaveMin + rng() * Math.max(0, tune.leaveMax - tune.leaveMin), left: false, jackpot: false,
+    clear: null, sseUntil: 0, paused: false, fast: false, main: 0, frame: 0, ambushT: null, target: null, dog: null,
+    view: { cx: 76, cy: 72, z: tune.zoomStart, rot: 0.2, track: null, tx: 0, ty: 0 },
+    stats: { fkia: 0, fwia: 0, ckia: 0, cwia: 0, ekia: 0, ewia: 0, det: 0 }, result: null,
+  };
+  spawn();
+  say('UAV', 'Gray Eagle on station over OBJ RAVEN. Thermal, white hot.');
+  say('GFC', 'Dismounted at the drop-off. Moving to the release point.');
+  teamGo(state.teams.A, POSTS.RP_A, tune.walk, 0);
+  teamGo(state.teams.B, POSTS.RP_B, tune.walk, 0);
+  teamGo(state.teams.C, POSTS.RP_C, tune.walk, 0);
+}
+function spawn() {
+  const s = state;
+  const P = (role, side, x, y, o = {}) => mk(Object.assign({ role, side, x: x + 0.5, y: y + 0.5 }, o));
+  // Blue: three rifle squads and a reserve with the trucks. Ground force commander moves with A.
+  const team = (id, n, x0, y0, task) => {
+    const T = { id, task, members: [], chase: null, block: null, mounted: false, truck: null, rep: 0 }; s.teams[id] = T;
+    for (let i = 0; i < n; i++) {
+      const a = P('soldier', 'blue', x0 + (i % 4), y0 + ((i / 4) | 0), { team: id, name: `${id}-${i + 1}`, armed: true, face: 0 });
+      T.members.push(a.id);
+    }
+    return T;
+  };
+  team('A', 8, 12, 68, 'ASSAULT'); team('B', 6, 7, 64, 'N CORDON'); team('C', 6, 7, 74, 'S CORDON'); const R = team('R', 6, 4, 66, 'RESERVE');
+  P('truck', 'blue', 2, 63, { face: 0, name: 'truck' }); const tr = P('truck', 'blue', 2, 70, { face: 0, name: 'R truck' }); P('truck', 'blue', 2, 77, { face: 0, name: 'truck' });
+  R.truck = tr.id;
+  // The household of Haji Wali, on and around the objective
+  const tr_ = s.truth;
+  const sleeper = (role, x, y, o = {}) => P(role, 'civ', x, y, Object.assign({ awake: false, state: 'sleep', posture: 'prone', cmp: 'T', face: rng() * 6 }, o));
+  // two men awake by the gate, one smoking: only a rifle tells a guard from the old man's nephew
+  P('man', 'civ', 104, 72, { awake: true, cmp: 'T', desc: 'elderly male', name: 'Haji Wali', face: 2.5, posture: 'sit' });
+  if (tr_ === 'present') {
+    s.target = P('target', 'red', 115, 60, { awake: false, state: 'sleep', posture: 'prone', cmp: 'T', desc: 'MAM', name: 'ZAHID' }).id;
+    P('guard', 'red', 117, 58, { awake: false, state: 'sleep', posture: 'prone', armed: true, cmp: 'T', desc: 'MAM', name: 'guard' });
+    s.companion = P('guard', 'red', 106, 70, { awake: true, armed: true, cmp: 'T', desc: 'MAM', name: 'guard', face: 3.1, smoker: true }).id;
+  } else {
+    P('man', 'civ', 106, 70, { awake: true, cmp: 'T', desc: 'MAM', name: 'nephew', face: 3.1, smoker: true });
+  }
+  sleeper('woman', 124, 70); sleeper('woman', 127, 71); sleeper('child', 124, 80); sleeper('child', 127, 81);
+  sleeper('teen', 104, 58, { onRoof: true, desc: 'male, teens', name: 'Wali\'s son' }); sleeper('child', 106, 57, { onRoof: true });
+  s.dog = P('dog', 'civ', 112, 78, { awake: true, cmp: 'T', posture: 'prone', face: 1, barkCd: 0, name: 'dog' }).id;
+  // Next door
+  if (tr_ === 'nextdoor') {
+    s.target = P('target', 'red', 150, 62, { awake: false, state: 'sleep', posture: 'prone', cmp: 'E', desc: 'MAM', name: 'ZAHID' }).id;
+    s.companion = P('guard', 'red', 141, 76, { awake: true, armed: true, cmp: 'E', desc: 'MAM', name: 'guard', face: 3 }).id;
+    sleeper('man', 140, 62, { cmp: 'E', desc: 'MAM' });
+  } else {
+    sleeper('man', 140, 62, { cmp: 'E', desc: 'MAM' }); sleeper('woman', 152, 62, { cmp: 'E' });
+  }
+  // The compound to the north: a family asleep on the roof, or fighters waiting for the raid
+  if (tr_ === 'setup') {
+    for (const x of [106, 113, 120]) P('fighter', 'red', x, 38, { onRoof: true, posture: 'prone', armed: true, hostile: true, ambush: true, awake: true, cmp: 'N', face: Math.PI / 2, desc: 'MAM', name: 'fighter' });
+    sleeper('man', 113, 34, { cmp: 'N', desc: 'MAM' });
+  } else {
+    sleeper('man', 108, 35, { onRoof: true, cmp: 'N', desc: 'MAM' }); sleeper('woman', 118, 36, { onRoof: true, cmp: 'N' });
+  }
+}
+
+// ---- Radio and duty log ---------------------------------------------------------------------
+function say(from, txt, kind = '') {
+  state.radio.push({ t: state.t, from, txt, kind });
+  if (state.radio.length > 80) state.radio.shift();
+  if (from !== 'CP') tone(1400, 0.035, 'sine', 0.06);
+}
+function hint(txt) { state.hint = txt; state.hintUntil = state.t + 4; }
+const fmtClock = t => { const T = 9000 + Math.floor(t); const p = n => String(n).padStart(2, '0'); return `${p((T / 3600 | 0) % 24)}:${p(T % 3600 / 60 | 0)}:${p(T % 60)}`; };
+function compass(dx, dy) { const a = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360; return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(a / 45) % 8]; }
+function where(x, y) {
+  const p = { x, y };
+  if (inB(p, CMP.T)) return 'on the objective';
+  if (inB(p, CMP.E)) return 'in the compound east of the objective';
+  if (inB(p, CMP.N)) return 'in the compound north of the objective';
+  if (x >= 131 && x < 135 && y >= 30 && y < 108) return 'in the alley east of the objective';
+  const dx = x - 115, dy = y - 70; return `${Math.round(Math.hypot(dx, dy) / 10) * 10} m ${compass(dx, dy)} of the objective`;
+}
+
+// ---- Movement ----------------------------------------------------------------------------------
+function goTo(a, x, y, spd, face = null) { a.path = findPath(a.x, a.y, x, y, a.side === 'blue' ? 'blue' : 'red'); a.pi = 0; a.spd = spd; a.endFace = face; a.pending = false; }
+function teamGo(T, posts, spd, face, all = false) {
+  T.members.forEach((id, i) => {
+    const a = A(id); if (a.mounted) return;
+    if (!all && a.hp !== 'ok') return;
+    a.post = posts[i % posts.length]; a.postFace = a.post[2] != null ? a.post[2] : face; a.delay = i * 0.7; a.spd = spd; a.path = null; a.pending = true; a.job = null;
+  });
+}
+function arrived(T) { return T.members.every(id => { const a = A(id); return a.hp !== 'ok' || a.mounted || (!a.pending && !a.moving); }); }
+function moveActor(a, dt) {
+  if (a.mounted) return;
+  if (a.pending) { a.delay -= dt; if (a.delay <= 0) goTo(a, a.post[0] + 0.5, a.post[1] + 0.5, a.spd, a.postFace); }
+  if (!a.path || a.pi >= a.path.length) { a.moving = false; return; }
+  let sp = a.spd; if (a.hp === 'wia') sp *= 0.5; if (a.hp === 'kia') sp *= 0.45;
+  let left = sp * dt;
+  while (left > 0 && a.pi < a.path.length) {
+    const p = a.path[a.pi], dx = p[0] - a.x, dy = p[1] - a.y, d = Math.hypot(dx, dy);
+    if (d < 1e-6) { a.pi++; continue; }
+    a.face = Math.atan2(dy, dx);
+    if (d <= left) { a.x = p[0]; a.y = p[1]; a.pi++; left -= d; } else { a.x += dx / d * left; a.y += dy / d * left; left = 0; }
+  }
+  a.gait += sp * dt; a.moving = true;
+  if (a.pi >= a.path.length) { a.moving = false; if (a.endFace != null) a.face = a.endFace; }
+}
+function mount(T) {
+  const tr = A(T.truck); let ok = true;
+  T.members.forEach(id => { const a = A(id); if (a.hp === 'ok' && dist(a, tr) > 10) ok = false; });
+  if (!ok) return false;
+  T.members.forEach(id => { const a = A(id); if (a.hp === 'ok') { a.mounted = true; a.path = null; a.pending = false; a.job = null; } });
+  T.mounted = true; return true;
+}
+function dismount(T) {
+  const tr = A(T.truck); tr.path = null; tr.moving = false;
+  T.members.forEach((id, i) => { const a = A(id); if (!a.mounted) return; const p = nearestPass(tr.x - 2 + (i % 3) * 2, tr.y - 2 + ((i / 3) | 0) * 3, 'blue'); a.x = p[0] + 0.5; a.y = p[1] + 0.5; a.mounted = false; a.face = tr.face; });
+  T.mounted = false;
+}
+
+// ================================================================================================
+// SIMULATION STEP
+// ================================================================================================
+function sim(dt) {
+  const s = state; s.t += dt; s.view.rot += tune.orbit * dt;
+  for (const a of s.actors) {
+    if (a.gone) continue;
+    if (a.hp === 'kia' && !(s.phase === 'exfil' || s.phase === 'abort') ) { a.moving = false; continue; }
+    if (a.detained && a.side !== 'blue' && !(s.phase === 'exfil' || s.phase === 'abort')) { a.moving = false; continue; }
+    if (a.surr) { a.moving = false; continue; }
+    moveActor(a, dt);
+    a.look += wrap(a.face - a.look) * Math.min(1, dt * 5);
+  }
+  for (const T of Object.values(s.teams)) if (T.mounted) {
+    const tr = A(T.truck); T.members.forEach(id => { const a = A(id); if (a.mounted) { a.x = tr.x; a.y = tr.y; a.face = tr.face; } });
+  }
+  if (++s.frame % 15 === 0) perceive();
+  combat(dt); red(dt); blueJobs(); teamsTick(dt); gfc(dt);
+  s.fx = s.fx.filter(f => s.t - f.t0 < f.dur);
+  if (s.t - s.bftT >= 5) { s.bftT = s.t; s.bft = Object.values(s.teams).map(T => { const L = T.mounted ? A(T.truck) : (T.members.map(A).find(a => a.hp === 'ok') || A(T.members[0])); return { id: T.id, x: L.x, y: L.y }; }); }
+  const tk = s.view.track != null && A(s.view.track);
+  if (tk && droneSees(tk)) { s.view.cx += (tk.x - s.view.cx) * Math.min(1, dt * 2.5); s.view.cy += (tk.y - s.view.cy) * Math.min(1, dt * 2.5); s.view.tx = tk.x; s.view.ty = tk.y; }
+  if (s.t > 3600 && !s.result) endRun();
+}
+const persons = () => state.actors.filter(a => a.role !== 'truck');
+const activeBlue = () => state.actors.filter(a => a.side === 'blue' && a.role === 'soldier' && a.hp === 'ok' && !a.mounted);
+const teamOf = a => a && a.team ? a.team : 'GFC';
+
+// ---- What everyone notices, four times a second ----------------------------------------------
+function perceive() {
+  const s = state, blues = activeBlue(), dt = 0.25;
+  const dog = s.dog != null && A(s.dog);
+  if (dog && dog.hp === 'ok') {
+    dog.barkCd -= dt;
+    if (dog.barkCd <= 0) {
+      const movers = s.actors.filter(b => b.side === 'blue' && !b.mounted && b.moving && b.hp === 'ok');
+      const heard = movers.some(b => dist(b, dog) < tune.dogHear * (b.role === 'truck' ? 1.6 : 1)) || (dog.alarm && rng() < 0.4);
+      if (heard) { bark(dog); dog.barkCd = 2 + rng() * 2.5; }
+    }
+  }
+  for (const a of persons()) {
+    if (a.side === 'blue' || a.hp !== 'ok' || a.detained || a.gone || a.role === 'dog') continue;
+    if (!a.awake) { if (rng() < tune.wakeChance * dt) wake(a); continue; }
+    if (a.alarm) continue;
+    if (at(a.x, a.y) === ROOF && !a.onRoof) continue; // indoors sees nothing outside
+    if (a.posture === 'prone' && !a.ambush) continue;
+    for (const b of blues) {
+      const d = dist(a, b), r = tune.eyeRange * (b.moving ? 1 : 0.5);
+      if (d < r && los(a, b)) { if (a.ambush) { if (d < 40) springAmbush(a); } else alarmCompound(a.cmp || 'X', a); break; }
+    }
+  }
+  // the target is a careful man: enough barking and he is up and gone
+  const tg = s.target != null && A(s.target);
+  if (tg && tg.awake && !tg.alarm && s.t - s.lastBark < 10 && s.dogBarks >= (tg.cmp === 'T' ? 4 : 7)) alarmPerson(tg, 'dog');
+  // challenge anyone moving near soldiers
+  for (const a of persons()) {
+    if (a.side === 'blue' || a.hp !== 'ok' || a.detained || a.gone || a.surr || a.role === 'dog') continue;
+    const mover = a.state === 'flee' || a.state === 'leave' || (a.armed && a.alarm && !a.hostile && at(a.x, a.y) !== ROOF);
+    if (!mover) continue;
+    for (const b of blues) {
+      const d = dist(a, b); if (d > tune.challenge || !los(a, b)) continue;
+      if (!a.armed) { if (d < 2.5 || rng() < tune.haltChance * dt) { surrender(a, b); } }
+      else if (!a.hostile) { const r = rng(); if (r < 0.3) a.hostile = true; else if (r < 0.4) surrender(a, b); }
+      break;
+    }
+  }
+  // what the ground force sees and says
+  for (const a of persons()) {
+    if (a.side === 'blue' || a.gone || a.detained || a.hp !== 'ok') continue;
+    if (at(a.x, a.y) === ROOF && !a.onRoof) continue;
+    if (a.onRoof && a.posture !== 'stand') continue;
+    const b = blues.find(b => dist(a, b) < 70 && los(a, b));
+    if (!b) continue;
+    if (a.awake && a.role !== 'dog') s.lastMoveSeen = s.t;
+    if ((a.state === 'flee' || a.state === 'leave') && !a.reported && !inB(a, CMP.T)) {
+      a.reported = true; say(teamOf(b), `Squirter, 1x pax moving ${compass(Math.cos(a.face), Math.sin(a.face))} ${where(a.x, a.y)}.`);
+      events.push({ kind: 'squirter', id: a.id });
+    }
+  }
+}
+function wake(a) { if (a.awake) return; a.awake = true; if (a.state === 'sleep') a.state = 'idle'; if (a.onRoof || a.posture === 'prone') a.posture = a.onRoof ? 'sit' : 'stand'; }
+function bark(dog) {
+  const s = state; s.dogBarks++; s.lastBark = s.t; events.push({ kind: 'bark' });
+  const v = hearVol(dog.x, dog.y); tone(560, 0.06, 'square', 0.12 * v); tone(460, 0.08, 'square', 0.12 * v, 0.09);
+  for (const a of persons()) if (!a.awake && a.side !== 'blue' && dist(a, dog) < 45 && rng() < (a.onRoof ? 0.3 : 0.12)) wake(a);
+  if (['infil', 'isolate'].includes(s.phase) && activeBlue().some(b => dist(b, dog) < 75) && s.t - s.lastDogReport > 40) { s.lastDogReport = s.t; say('GFC', 'Dog barking on the objective.'); }
+  // a few barks and someone goes up on the roof to look
+  if (s.dogBarks >= 3) investigate('T', [102, 66], [104, 57]);
+  if (s.dogBarks >= 6) investigate('E', [138, 68], [139, 64]);
+}
+function investigate(cmp, ladder, perch) {
+  const s = state; if (s['inv' + cmp]) return;
+  const who = persons().find(a => a.cmp === cmp && a.awake && !a.alarm && a.hp === 'ok' && !a.onRoof && !a.detained && (a.role === 'guard' || a.role === 'man') && at(a.x, a.y) !== ROOF)
+    || persons().find(a => a.cmp === cmp && a.awake && !a.alarm && a.hp === 'ok' && !a.onRoof && (a.role === 'guard' || a.role === 'man'));
+  if (!who) return;
+  s['inv' + cmp] = true; who.state = 'inv'; who.posture = 'stand'; who.perch = perch; goTo(who, ladder[0] + 0.5, ladder[1] + 0.5, tune.walk);
+}
+function alarmCompound(cmp, by) {
+  const s = state; if (s.alarm[cmp]) return; s.alarm[cmp] = s.t; events.push({ kind: 'alarm', cmp, by: by ? by.role : 'noise', t: Math.round(s.t) });
+  for (const a of persons()) if (a.side !== 'blue' && (a.cmp === cmp || (by && dist(a, by) < 25))) alarmPerson(a, 'shout');
+  for (const a of persons()) if (a.side !== 'blue' && by && dist(a, by) < 60) wake(a);
+}
+function alarmPerson(a, why) {
+  const s = state; if (a.alarm || a.hp !== 'ok' || a.detained) return;
+  wake(a); a.alarm = true;
+  if (a.role === 'guard' || a.role === 'fighter') { a.hostile = true; if (a.ambush) springAmbush(a); }
+  else if (a.role === 'target') a.fleeAt = s.t + (why === 'breach' ? 3 : tune.warnDelay * (0.5 + rng()));
+  else if (a.role === 'teen') { if (rng() < 0.4) a.fleeAt = s.t + 3 + rng() * 6; }
+  else if (a.role === 'dog') a.barkCd = 0;
+  if (a.onRoof && a.role !== 'fighter' && a.role !== 'guard') a.posture = 'sit';
+}
+function springAmbush() { const s = state; if (s.ambushT != null) return; s.ambushT = s.t; for (const a of persons()) if (a.ambush) { a.ambush = false; a.alarm = true; a.posture = 'sit'; } }
+function loud(x, y, r, kind) {
+  for (const a of persons()) {
+    if (a.side === 'blue' || a.hp !== 'ok' || a.gone) continue;
+    const d = Math.hypot(a.x - x, a.y - y);
+    if (d < r) { wake(a); if (d < r * 0.45 || kind === 'breach') alarmPerson(a, kind); }
+  }
+  if (kind === 'breach') { alarmCompound('T'); }
+}
+function surrender(a, b) {
+  a.surr = true; a.state = 'surrender'; a.path = null; a.moving = false; a.hostile = false;
+  if (b && dist(a, b) < 2.5) detain(a, b);
+}
+function detain(p, b, quiet = false) {
+  const s = state; if (p.detained) return;
+  p.detained = true; p.surr = false; p.state = 'detained'; p.posture = 'sit'; p.path = null; p.armed = false; p.hostile = false; p.onRoof = false;
+  if (at(p.x, p.y) === WALL) { const q = nearestPass(p.x, p.y, 'red'); p.x = q[0] + 0.5; p.y = q[1] + 0.5; }
+  s.stats.det++; events.push({ kind: 'detain', id: p.id });
+  if (!quiet) say(teamOf(b), `1x ${p.desc || 'pax'} detained ${where(p.x, p.y)}.`);
+  if (p.id === s.target) jackpot();
+}
+function jackpot() { const s = state; if (s.jackpot) return; s.jackpot = true; s.gained = 'JACKPOT'; say('GFC', 'JACKPOT, JACKPOT. Biometric match on a detainee: Qari ZAHID.', 'ask'); events.push({ kind: 'jackpot' }); [523, 659, 784].forEach((f, i) => tone(f, 0.18, 'triangle', 0.12, i * 0.12)); }
+
+// ---- The enemy and the household -----------------------------------------------------------------
+function red(dt) {
+  const s = state;
+  const tg = s.target != null && A(s.target);
+  // left alone, he moves on before first light, with his guard
+  if (tg && !s.left && s.t > s.leaveAt && tg.hp === 'ok' && !tg.alarm && !tg.detained && !tg.surr) {
+    s.left = true; wake(tg); const c = s.companion != null && A(s.companion);
+    const dest = rng() < 0.5 ? [132, 1] : [198, 128];
+    tg.state = 'leave'; tg.posture = 'stand'; goTo(tg, dest[0], dest[1], tune.walk * 0.85);
+    if (c && c.hp === 'ok' && !c.detained) { c.state = 'leave'; c.posture = 'stand'; c.delay = 0; c.followT = 1; goTo(c, dest[0], dest[1], tune.walk * 0.85); }
+    events.push({ kind: 'leave' });
+  }
+  for (const a of persons()) {
+    if (a.side === 'blue' || a.hp !== 'ok' || a.detained || a.gone || a.surr) continue;
+    if (a.fleeAt != null && s.t >= a.fleeAt && a.state !== 'flee') startFlee(a);
+    if (a.state === 'inv' && !a.moving && a.path && a.pi >= a.path.length) { a.onRoof = true; a.x = a.perch[0] + 0.5; a.y = a.perch[1] + 0.5; a.state = 'look'; a.path = null; }
+    if ((a.state === 'flee' || a.state === 'leave') && (a.x < 1.5 || a.y < 1.5 || a.x > MW - 1.5 || a.y > MH - 1.5)) {
+      a.gone = true; events.push({ kind: 'escaped', id: a.id });
+    }
+    if (a.role === 'fighter' && s.ambushT != null && !a.withdrew) {
+      const down = persons().filter(f => f.role === 'fighter' && f.hp !== 'ok').length;
+      if (down >= 2 || s.t - s.ambushT > 75) { a.withdrew = true; a.onRoof = false; a.x = 113.5 + (a.id % 3); a.y = 27.5; a.posture = 'stand'; a.state = 'flee'; goTo(a, 100 + (a.id % 3) * 10, 1, tune.runner); }
+    }
+    if (a.role === 'fighter' && a.ambush && rng() < dt * 0.15) a.peekUntil = s.t + 1.5;
+  }
+}
+function startFlee(a) {
+  const s = state; a.state = 'flee'; a.posture = 'stand';
+  if (a.onRoof) { a.onRoof = false; const l = a.cmp === 'E' ? [138, 68] : [102, 66]; a.x = l[0] + 0.5; a.y = l[1] + 0.5; }
+  const dest = rng() < 0.5 ? [132, 1] : [198, 128];
+  goTo(a, dest[0], dest[1], a.role === 'target' ? tune.limp : tune.runner);
+  events.push({ kind: 'flee', id: a.id });
+}
+
+// ---- Fighting -----------------------------------------------------------------------------------
+function blueSees(b, r) {
+  if (r.onRoof && r.posture !== 'stand' && state.t - r.firedT > 6) return false;
+  return los(b, r);
+}
+function combat(dt) {
+  const s = state;
+  for (const a of s.actors) {
+    if (!a.armed || a.hp !== 'ok' || a.detained || a.surr || a.mounted || a.gone) continue;
+    a.fireCd -= dt; if (a.fireCd > 0) continue;
+    let best = null, bd = 1e9;
+    if (a.side === 'blue') {
+      for (const r of s.actors) {
+        if (r.side !== 'red' || !r.armed || !r.hostile || r.hp !== 'ok' || r.surr || r.detained || r.gone) continue;
+        const d = dist(a, r); if (d < tune.rangeOut && d < bd && blueSees(a, r)) { best = r; bd = d; }
+      }
+    } else {
+      if (!a.hostile || a.ambush) { a.fireCd = 0.3; continue; }
+      for (const b of s.actors) {
+        if (b.side !== 'blue' || b.role !== 'soldier' || b.hp === 'kia' || b.mounted) continue;
+        const d = dist(a, b); if (d < tune.rangeOut && d < bd && los(a, b)) { best = b; bd = d; }
+      }
+    }
+    if (!best) { a.fireCd = 0.3; a.lastTgt = null; continue; }
+    if (a.lastTgt !== best.id) { a.lastTgt = best.id; a.fireCd = 0.7 + rng() * 1.3; continue; } // time to see, point and fire
+    fire(a, best, bd);
+  }
+}
+function fire(a, t, d) {
+  const s = state;
+  a.firedT = s.t; a.face = Math.atan2(t.y - a.y, t.x - a.x); a.look = a.face; a.fireCd = tune.fireGap * (0.6 + rng() * 0.8);
+  if (a.onRoof && a.role === 'fighter') a.posture = 'sit';
+  s.fx.push({ kind: 'flash', x: a.x + Math.cos(a.face) * 0.6, y: a.y + Math.sin(a.face) * 0.6, t0: s.t, dur: 0.07, r: 1.1 });
+  noise(0.16, 0.5 * hearVol(a.x, a.y), 2600);
+  events.push({ kind: 'shot', side: a.side });
+  loud(a.x, a.y, 150, 'shot');
+  if (a.side !== 'blue' && t.side === 'blue') contactStart(a, t);
+  let p = tune.hitBase * clamp(1.4 - d / tune.rangeOut, 0.25, 1.4) * (t.moving ? 0.6 : 1) * (t.onRoof ? 0.3 : 1) * (a.side === 'blue' ? 1 : 0.6) * (d < 6 ? 2 : 1);
+  if (rng() < p) hurt(t, a);
+  for (const c of persons()) if (c !== t && c.side === 'civ' && c.hp === 'ok' && !c.gone && dist(c, t) < 1.6 && rng() < tune.civHit) hurt(c, a);
+}
+function hurt(v, by) {
+  const s = state; const kia = rng() < 0.4;
+  v.hp = kia ? 'kia' : 'wia'; v.path = null; v.moving = false; v.deathT = s.t; v.pending = false; v.posture = 'prone';
+  events.push({ kind: 'hit', side: v.side, kia });
+  if (v.side === 'blue') { s.stats[kia ? 'fkia' : 'fwia']++; say(teamOf(v), `${v.name} is hit. 1x friendly ${kia ? 'KIA' : 'WIA'}.`, 'ask'); }
+  else if (v.side === 'civ') { if (v.role !== 'dog') s.stats[kia ? 'ckia' : 'cwia']++; if (by.side === 'blue' && v.role !== 'dog') say(teamOf(by), 'Possible civilian casualty.'); }
+  else { s.stats[kia ? 'ekia' : 'ewia']++; if (by.side === 'blue') say(teamOf(by), `1x enemy ${kia ? 'KIA' : 'WIA'} ${where(v.x, v.y)}.`); }
+}
+function contactStart(shooter, tgt) {
+  const s = state; s.contact = true;
+  if (!s.tic) { s.tic = true; say(teamOf(tgt), `TIC! Taking fire${shooter.onRoof ? ' from a rooftop' : ''}, ${where(shooter.x, shooter.y)}. Returning fire.`, 'ask'); }
+  if (!s.contactAsked && ['infil', 'isolate', 'breach', 'clear'].includes(s.phase)) {
+    s.contactAsked = true; s.pendingGate = (s.ask && s.ask.kind !== 'contact') ? s.ask.kind : s.waitKind; s.waitKind = null; s.held = true;
+    ask('contact', 'Troops in contact. Request: continue the mission, or break contact and exfil?');
+  }
+}
+
+// ---- Soldiers' own jobs: detain whoever complies, chase what the CP orders ------------------------
+function blueJobs() {
+  const s = state;
+  if (s.frame % 15 !== 7) return;
+  for (const p of persons()) {
+    if (!p.surr || p.detained || p.gone) continue;
+    if (p.claimed != null) { const b = A(p.claimed); if (b.hp === 'ok' && b.job === p.id) continue; }
+    let best = null, bd = 50;
+    for (const b of activeBlue()) {
+      if (b.job != null) continue;
+      if (b.team === 'A' && s.phase === 'clear') continue;
+      const d = dist(b, p); if (d < bd) { best = b; bd = d; }
+    }
+    if (best) { best.job = p.id; p.claimed = best.id; goTo(best, p.x, p.y, tune.rush); }
+  }
+  for (const b of activeBlue()) {
+    if (b.job == null) continue;
+    const p = A(b.job);
+    if (p.detained || p.gone || p.hp === 'kia') { b.job = null; backToPost(b); continue; }
+    if (dist(b, p) < 2.2) { detain(p, b); b.job = null; backToPost(b); }
+    else if (!b.moving) goTo(b, p.x, p.y, tune.rush);
+  }
+}
+function backToPost(b) {
+  const s = state; if (b.post && !['clear', 'sse'].includes(s.phase)) goTo(b, b.post[0] + 0.5, b.post[1] + 0.5, tune.walk, b.postFace);
+}
+function teamsTick(dt) {
+  const s = state;
+  for (const id of ['B', 'C', 'R']) {
+    const T = s.teams[id];
+    if (T.chase != null) {
+      const p = A(T.chase);
+      if (p.gone || p.detained || p.hp !== 'ok' || p.surr) {
+        T.chase = null;
+        if (T.mounted) dismount(T);
+        if (id !== 'R' && !['exfil', 'abort'].includes(s.phase)) { teamGo(T, POSTS[id], tune.walk, id === 'B' ? Math.PI / 2 : -Math.PI / 2); say(id, 'Back to our positions.'); }
+        continue;
+      }
+      T.rep -= dt; if (T.rep > 0) continue; T.rep = 1.5;
+      if (T.mounted) { const tr = A(T.truck); if (dist(tr, p) < 25) dismount(T); else goTo(tr, p.x, p.y, tune.truck); }
+      if (!T.mounted) T.members.forEach((mid, i) => { const m = A(mid); if (m.hp === 'ok' && m.job == null) goTo(m, p.x + (i % 3) - 1, p.y + ((i / 3) | 0), tune.rush); });
+    }
+    if (T.block && T.mounted) {
+      const tr = A(T.truck);
+      if (!tr.moving && dist(tr, { x: T.block[0], y: T.block[1] }) < 12) {
+        dismount(T); const b = T.block, offs = [[0, 0], [2, 1], [-2, 1], [1, -2], [-1, 2], [3, -1]];
+        teamGo(T, offs.map(o => nearestPass(b[0] + o[0], b[1] + o[1], 'blue')), tune.rush, null); say('R', 'Dismounted. Blocking position set.');
+      } else if (!tr.moving) goTo(tr, T.block[0], T.block[1], tune.truck);
+    }
+  }
+}
+
+// ---- The ground force commander: runs the raid, asks the CP at each gate ------------------------
+function ask(kind, txt) { state.ask = { kind, t: state.t, txt }; say('GFC', txt, 'ask'); events.push({ kind: 'ask', what: kind }); tone(880, 0.09, 'sine', 0.15); tone(880, 0.09, 'sine', 0.15, 0.14); }
+function obs() {
+  const s = state; const bits = [];
+  if (s.t - s.lastBark < 20) bits.push('Dog barking on the objective.');
+  if (s.t - s.lastMoveSeen < 15) bits.push('Movement on the objective.');
+  if (s.contact) bits.push('We have been in contact.');
+  return bits.length ? bits.join(' ') : 'Objective quiet.';
+}
+function answer(v) {
+  const s = state; const k = s.ask && s.ask.kind; if (!k) return;
+  s.ask = null;
+  if (v === 'wait') { say('CP', k === 'contact' ? 'Hold where you are and fight. Stand by.' : 'WAIT. Hold your position. Stand by.'); s.waitKind = k; s.waitUntil = s.t + tune.waitAsk; events.push({ kind: 'wait', what: k }); return; }
+  if (v === 'abort') { abort(); return; }
+  events.push({ kind: 'go', what: k });
+  if (k === 'gate1') { say('CP', 'GO. Isolate the objective.'); s.phase = 'isolate'; teamGo(s.teams.B, POSTS.B, tune.walk, Math.PI / 2); teamGo(s.teams.C, POSTS.C, tune.walk, -Math.PI / 2); teamGo(s.teams.A, POSTS.STACK, tune.walk, 1.0); }
+  else if (k === 'gate2') { say('CP', 'GO. Breach.'); s.phase = 'breach'; s.breachAt = s.t + 6; say('GFC', 'Breacher up. Charge set. Stand by.'); }
+  else if (k === 'contact') { say('CP', 'Continue the mission.'); s.held = false; if (s.pendingGate) { s.waitKind = s.pendingGate; s.waitUntil = s.t + 2; s.pendingGate = null; } }
+}
+function abort() {
+  const s = state; if (['exfil', 'abort', 'done'].includes(s.phase)) return;
+  if (s.jackpot || s.phase === 'sse') { say('CP', 'Exfil now. All elements back to the drop-off.'); startExfil('exfil'); events.push({ kind: 'exfil' }); return; }
+  say('CP', 'ABORT, ABORT, ABORT. All elements break contact and return to the drop-off.', 'ask'); events.push({ kind: 'abort' }); startExfil('abort');
+}
+function startExfil(kind) {
+  const s = state; s.phase = kind; s.ask = null; s.waitKind = null; s.held = false;
+  for (const id of ['A', 'B', 'C']) { const T = s.teams[id]; T.chase = null; teamGo(T, POSTS['DROP_' + id], tune.walk, 0, true); }
+  const R = s.teams.R; R.chase = null; R.block = null;
+  if (R.mounted) goTo(A(R.truck), 3, 70, tune.truck); else teamGo(R, POSTS.DROP_R, tune.walk, 0, true);
+  let i = 0; for (const p of persons()) if (p.detained && p.hp !== 'kia') { const t = POSTS.DROP_A[i++ % 8]; goTo(p, t[0] + 3, t[1] + 1, tune.walk * 0.9); }
+}
+function explode() {
+  const s = state; rect(GR, 100, 69, 100, 71); s.breached = true; s.breachT = s.t; s.phase = 'clear';
+  s.fx.push({ kind: 'boom', x: 100.5, y: 70.5, t0: s.t, dur: 2.5, r: 7 });
+  noise(1.4, 0.9 * hearVol(100, 70) + 0.2, 500); tone(48, 0.9, 'sine', 0.5);
+  events.push({ kind: 'breach' }); loud(100, 70, 220, 'breach'); say('GFC', 'Breach, breach, breach. Assault element entering.');
+  const m = s.teams.A.members;
+  s.clear = { els: [{ id: 1, m: m.slice(0, 4), rooms: ['CY', 'R1', 'R2', 'R3'], ri: 0, st: 'move', tt: 0 }, { id: 2, m: m.slice(4), rooms: ['CY2', 'R4', 'R5'], ri: 0, st: 'move', tt: 0 }] };
+}
+function clearTick() {
+  const s = state;
+  for (const el of s.clear.els) {
+    if (el.done) continue;
+    const live = el.m.map(A).filter(a => a.hp === 'ok');
+    if (!live.length) { el.done = true; continue; }
+    const R = ROOMS[el.rooms[el.ri]];
+    if (el.st === 'move') { live.forEach((a, i) => { a.job = null; goTo(a, R.pts[i % 4][0] + 0.5, R.pts[i % 4][1] + 0.5, tune.rush); }); el.st = 'going'; el.tt = s.t; }
+    else if (el.st === 'going') { if (live.every(a => !a.moving) || s.t - el.tt > 25) { el.st = 'dwell'; el.tt = s.t; } }
+    else if (el.st === 'dwell') {
+      const inRoom = persons().filter(p => p.side !== 'blue' && !p.gone && !p.onRoof && inB(p, R.b));
+      const threat = inRoom.some(p => p.armed && p.hostile && p.hp === 'ok' && !p.surr);
+      if ((threat && s.t - el.tt < 20) || s.t - el.tt < 3) continue;
+      let det = 0, sec = 0, dead = 0, jack = false;
+      for (const p of inRoom) {
+        if (p.hp === 'kia') { if (!p.counted) { p.counted = true; dead++; } continue; }
+        if (p.detained || p.secured) continue;
+        if (p.role === 'woman' || p.role === 'child') { p.secured = true; p.awake = true; p.posture = 'sit'; p.state = 'secured'; p.path = null; sec++; }
+        else if (p.role !== 'dog') { detain(p, live[0], true); det++; if (p.id === s.target) jack = true; }
+      }
+      say(`A-${el.id}`, `${R.name} clear.${det ? ` ${det}x detained.` : ''}${sec ? ` ${sec}x women and children secured.` : ''}${dead ? ` ${dead}x dead.` : ''}`);
+      el.ri++; if (el.ri >= el.rooms.length) el.done = true; else el.st = 'move';
+    }
+  }
+  if (s.clear.els.every(e => e.done)) { s.phase = 'sse'; s.sseUntil = s.t + tune.sseTime; say('GFC', 'Objective secure. Starting site exploitation and questioning.'); }
+}
+function gfc() {
+  const s = state;
+  if (!s.ask && s.waitKind && s.t >= s.waitUntil) {
+    const k = s.waitKind; s.waitKind = null;
+    ask(k, k === 'gate1' ? `Still at the release point. ${obs()} Request GO to isolate.` : k === 'gate2' ? `Still stacked at the gate. ${obs()} Request GO to breach.` : 'Still in contact. Request: continue, or break contact and exfil?');
+  }
+  if (s.held && !['exfil', 'abort'].includes(s.phase)) return;
+  const T = s.teams;
+  if (s.phase === 'infil') { if (!s.asked1 && !s.ask && !s.waitKind && arrived(T.A) && arrived(T.B) && arrived(T.C)) { s.asked1 = true; ask('gate1', `All elements at the release point. ${obs()} Request GO to isolate.`); } }
+  else if (s.phase === 'isolate') { if (!s.asked2 && !s.ask && !s.waitKind && arrived(T.A) && arrived(T.B) && arrived(T.C)) { s.asked2 = true; ask('gate2', `Cordon set. Assault element stacked at the gate. ${obs()} Request GO to breach.`); } }
+  else if (s.phase === 'breach') { if (s.t >= s.breachAt) explode(); }
+  else if (s.phase === 'clear') clearTick();
+  else if (s.phase === 'sse') {
+    if (s.t >= s.sseUntil) {
+      const n = persons().filter(p => p.detained).length;
+      say('GFC', s.jackpot ? 'SSE complete. Jackpot detainee secured. Exfil.' : `SSE complete. ${n}x detained, none match ZAHID. No jackpot. Exfil.`);
+      startExfil('exfil');
+    }
+  } else if (s.phase === 'exfil' || s.phase === 'abort') {
+    const home = ['A', 'B', 'C'].every(id => T[id].members.every(m => { const a = A(m); return Math.hypot(a.x - DROP[0], a.y - DROP[1]) < 14; }));
+    if (home) endRun();
+  }
+}
+function endRun() {
+  const s = state; if (s.result) return;
+  const tg = s.target != null && A(s.target);
+  let tgt;
+  if (!tg) tgt = 'ZAHID was never there. The tip was a setup.';
+  else if (tg.detained) tgt = tg.hp === 'wia' ? 'ZAHID wounded and detained.' : 'ZAHID detained. Jackpot.';
+  else if (tg.hp === 'kia') tgt = 'ZAHID killed.';
+  else if (tg.gone) tgt = 'ZAHID got away into the night.';
+  else tgt = 'ZAHID was still out there when you left.';
+  const truth = { present: 'He was in the house, Room 2.', nextdoor: 'He was sleeping next door, in the east compound.', setup: 'Three fighters were waiting on the roof to the north.' }[s.truth];
+  s.result = { tgt, truth };
+  s.gained = tg && tg.detained ? 'JACKPOT' : 'NO JACKPOT';
+  s.score = (tg && tg.detained ? 100 : 0) - s.stats.fkia * 40 - s.stats.fwia * 15 - s.stats.ckia * 40 - s.stats.cwia * 15;
+  s.phase = 'done'; scene = 'results'; events.push({ kind: 'end', score: s.score });
+}
+
+// ---- Player commands ----------------------------------------------------------------------------
+function cmdGo() { const s = state; if (s.ask) { s.ask.kind === 'contact' ? answer('go') : answer('go'); } else hint(s.waitKind ? 'You told him to wait. He will ask again shortly.' : 'The GFC runs the raid. He will ask you at each gate.'); }
+function cmdWait() { const s = state; if (s.ask) answer('wait'); else hint('Nothing to wait on right now.'); }
+function cmdAbort() {
+  const s = state; if (['exfil', 'abort', 'done'].includes(s.phase)) return;
+  if (s.ask) { answer('abort'); return; }
+  if (s.t - s.abortArm < 3) { s.abortArm = -99; abort(); } else { s.abortArm = s.t; hint(s.jackpot || s.phase === 'sse' ? 'Press X again to exfil now.' : 'Press X again to ABORT the raid.'); }
+}
+function cmdReserve() { const s = state; s.placing = !s.placing; if (s.placing) { s.main = 0; hint('Click the drone feed where the reserve should block.'); } }
+function placeReserve(x, y) {
+  const s = state, R = s.teams.R; s.placing = false; R.chase = null;
+  const p = nearestPass(x, y, 'blue'); R.block = p;
+  say('CP', `R, set a blocking position ${where(p[0], p[1])}.`); events.push({ kind: 'reserve' });
+  if (!R.mounted && !mount(R)) { R.block = null; teamGo(R, [p, [p[0] + 2, p[1]], [p[0] - 2, p[1]], [p[0], p[1] + 2], [p[0], p[1] - 2], [p[0] + 2, p[1] + 2]].map(q => nearestPass(q[0], q[1], 'blue')), tune.rush, null); say('R', 'Moving on foot.'); return; }
+  goTo(A(R.truck), p[0], p[1], tune.truck); say('R', 'Mounted. Moving.');
+}
+function cmdIntercept() {
+  const s = state; const p = s.view.track != null && A(s.view.track);
+  if (!p || p.side === 'blue' || p.role === 'truck' || p.role === 'dog') { hint('Click a person on the drone feed to track them, then I.'); return; }
+  if (p.detained || p.gone || p.hp !== 'ok') { hint('That person is no longer moving.'); return; }
+  let best = null, bd = 1e9;
+  for (const id of ['B', 'C', 'R']) {
+    const T = s.teams[id]; if (T.chase === p.id) { hint(`${id} is already on him.`); return; }
+    const L = T.mounted ? A(T.truck) : T.members.map(A).find(a => a.hp === 'ok'); if (!L) continue;
+    let d = dist(L, p); if (id === 'R') d /= 3;
+    if (d < bd) { bd = d; best = T; }
+  }
+  if (!best) return;
+  if (best.id === 'R' && !best.mounted && dist(best.members.map(A).find(a => a.hp === 'ok'), p) > 60) mount(best);
+  best.chase = p.id; best.block = null; best.rep = 0;
+  say('CP', `${best.id}, intercept the pax I'm tracking, ${where(p.x, p.y)}.`); say(best.id, 'Moving to intercept.'); events.push({ kind: 'intercept', team: best.id });
+}
+
+// ================================================================================================
+// FEEDS: what the command post can actually see
+// ================================================================================================
+let baseMap = null, grainCv = null;
+function buildBase() {
+  const S = 4, c = document.createElement('canvas'); c.width = MW * S; c.height = MH * S;
+  const x = c.getContext('2d'), img = x.createImageData(c.width, c.height), d = img.data;
+  for (let py = 0; py < c.height; py++) for (let px = 0; px < c.width; px++) {
+    const wx = px / S, wy = py / S, t = at(wx, wy);
+    let v = { [GR]: 50, [WALL]: 118, [ROOF]: 72, [DOOR]: 64, [FIELD]: 42, [WADI]: 30, [TRACK]: 60, [GATE]: 28 }[t] || 40;
+    if (t === FIELD) v += ((wy | 0) % 3 === 0) ? -7 : 0;
+    if (t === ROOF) v += (hash2((wx / 9) | 0, (wy / 9) | 0) - 0.5) * 16;
+    if (t === WADI) v += hash2(px >> 2, py >> 2) > 0.93 ? 30 : 0;
+    v += (hash2(px >> 1, py >> 1) - 0.5) * 9;
+    const i = (py * c.width + px) * 4; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  for (let k = 0; k < 90; k++) { // trees hold the day's heat
+    const tx = hash2(k, 11) * MW, ty = hash2(k, 23) * MH, t = at(tx, ty);
+    if (t !== GR && t !== FIELD && t !== WADI) continue;
+    const g = x.createRadialGradient(tx * S, ty * S, 0, tx * S, ty * S, 2.6 * S);
+    g.addColorStop(0, 'rgba(150,150,150,0.9)'); g.addColorStop(1, 'rgba(150,150,150,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(tx * S, ty * S, 2.6 * S, 0, 7); x.fill();
+  }
+  baseMap = c;
+  if (!grainCv) {
+    grainCv = document.createElement('canvas'); grainCv.width = grainCv.height = 256;
+    const gx = grainCv.getContext('2d'), gi = gx.createImageData(256, 256);
+    for (let i = 0; i < 256 * 256; i++) { const v = hash2(i, 99) * 255; gi.data[i * 4] = gi.data[i * 4 + 1] = gi.data[i * 4 + 2] = v; gi.data[i * 4 + 3] = 255; }
+    gx.putImageData(gi, 0, 0);
+  }
+}
+const droneSees = a => !a.gone && !a.mounted && (a.onRoof || at(a.x, a.y) !== ROOF);
+function droneXf(px, py, pw, ph) { const s = state.view.z * pw / 900; return { s, ox: px + pw / 2, oy: py + ph / 2, c: Math.cos(state.view.rot), n: Math.sin(state.view.rot), px, py, pw, ph }; }
+function w2s(X, x, y) { const dx = (x - state.view.cx) * X.s, dy = (y - state.view.cy) * X.s; return [X.ox + dx * X.c - dy * X.n, X.oy + dx * X.n + dy * X.c]; }
+function s2w(X, sx, sy) { const dx = (sx - X.ox) / X.s, dy = (sy - X.oy) / X.s; return [state.view.cx + dx * X.c + dy * X.n, state.view.cy - dx * X.n + dy * X.c]; }
+function hearVol(x, y) { const s = state; let fx = s.view.cx, fy = s.view.cy; if (s.main > 0) { const L = camWearer(['A', 'B', 'C'][s.main - 1]); if (L) { fx = L.x; fy = L.y; } } return 1 / (1 + Math.hypot(x - fx, y - fy) / 35); }
+const isLying = a => a.hp !== 'ok' || a.posture === 'prone';
+const g3 = v => { v = Math.round(clamp(v, 0, 255)); return `rgb(${v},${v},${v})`; };
+
+function drawHot(a, sx, sy, k, rot) {
+  const s = state;
+  if (a.role === 'truck') {
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(a.face + rot);
+    ctx.fillStyle = g3(120); ctx.fillRect(-2.6 * k, -1.1 * k, 5.2 * k, 2.2 * k);
+    ctx.fillStyle = g3(250); ctx.fillRect(1.4 * k, -0.85 * k, 1.1 * k, 1.7 * k);
+    ctx.fillStyle = g3(190); for (const wx of [-1.8, 1.5]) for (const wy of [-1.15, 1.0]) ctx.fillRect(wx * k, wy * k, 0.8 * k, 0.25 * k);
+    ctx.restore(); return;
+  }
+  const cool = a.hp === 'kia' ? clamp(1 - (s.t - a.deathT) / 900, 0.55, 1) : 1;
+  const hot = g3(245 * cool), warm = g3(205 * cool), gun = g3(30);
+  const dir = Math.cos(a.face + rot) >= 0 ? 1 : -1;
+  ctx.globalAlpha = 0.1; ctx.fillStyle = hot; ctx.beginPath(); ctx.arc(sx, sy - (isLying(a) ? 0 : 0.8 * k), 1.0 * k, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.lineCap = 'round';
+  if (a.role === 'dog') {
+    ctx.fillStyle = hot; ctx.beginPath(); ctx.ellipse(sx, sy - 0.35 * k, 0.45 * k, 0.17 * k, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx + dir * 0.5 * k, sy - 0.5 * k, 0.12 * k, 0, 7); ctx.fill();
+    ctx.strokeStyle = warm; ctx.lineWidth = Math.max(1, 0.08 * k);
+    for (const lx of [-0.3, -0.15, 0.2, 0.32]) { ctx.beginPath(); ctx.moveTo(sx + lx * k, sy - 0.3 * k); ctx.lineTo(sx + lx * k + (a.moving ? Math.sin(a.gait * 5 + lx * 9) * 0.1 * k : 0), sy); ctx.stroke(); }
+    return;
+  }
+  if (isLying(a)) {
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(a.face + rot);
+    const blanket = a.state === 'sleep';
+    ctx.fillStyle = blanket ? g3(165) : hot; ctx.beginPath(); ctx.ellipse(0, 0, 0.82 * k, 0.27 * k, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = hot; ctx.beginPath(); ctx.arc(0.86 * k, 0, 0.14 * k, 0, 7); ctx.fill();
+    if (a.armed) { ctx.strokeStyle = gun; ctx.lineWidth = Math.max(1.5, 0.1 * k); ctx.beginPath(); ctx.moveTo(0.4 * k, 0.24 * k); ctx.lineTo(1.65 * k, 0.18 * k); ctx.stroke(); }
+    ctx.restore(); return;
+  }
+  const hs = a.role === 'child' ? 0.66 : a.role === 'teen' ? 0.92 : 1;
+  const sit = a.posture === 'sit' || s.t < a.peekUntil;
+  const Hh = (sit ? 1.05 : 1.75) * hs * k;
+  const bob = a.role === 'target' && a.moving ? Math.abs(Math.sin(a.gait * 2.2)) * 0.08 * k : 0;
+  const y0 = sy + bob;
+  if (!sit) {
+    const sw = a.moving ? Math.sin(a.gait * (a.role === 'target' ? 2.2 : 2.8)) * 0.3 * k : 0;
+    const swL = a.role === 'target' ? sw * 0.3 : sw, swR = -sw;
+    ctx.strokeStyle = warm; ctx.lineWidth = Math.max(1.2, 0.14 * k);
+    ctx.beginPath(); ctx.moveTo(sx - 0.07 * k, y0 - 0.5 * Hh); ctx.lineTo(sx - 0.1 * k + swL, y0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx + 0.07 * k, y0 - 0.5 * Hh); ctx.lineTo(sx + 0.1 * k + swR, y0); ctx.stroke();
+  }
+  ctx.fillStyle = a.role === 'woman' ? g3(200 * cool) : hot;
+  ctx.beginPath();
+  if (a.side === 'blue') { const w = 0.3 * k; ctx.moveTo(sx - w, y0 - 0.84 * Hh); ctx.lineTo(sx + w, y0 - 0.84 * Hh); ctx.lineTo(sx + w * 0.8, y0 - 0.47 * Hh); ctx.lineTo(sx - w * 0.8, y0 - 0.47 * Hh); }
+  else { const top = 0.2 * k, bot = (a.role === 'woman' ? 0.34 : 0.26) * k, low = sit ? 0.05 : a.role === 'woman' ? 0.05 : 0.3; ctx.moveTo(sx - top, y0 - 0.84 * Hh); ctx.lineTo(sx + top, y0 - 0.84 * Hh); ctx.lineTo(sx + bot, y0 - low * Hh); ctx.lineTo(sx - bot, y0 - low * Hh); }
+  ctx.fill();
+  const hr = Math.max(1.3, 0.12 * 1.75 * hs * k);
+  ctx.beginPath(); ctx.arc(sx, y0 - 0.84 * Hh - hr * 0.9, hr, 0, 7); ctx.fill();
+  if (a.side === 'blue') { ctx.fillStyle = g3(120); ctx.beginPath(); ctx.arc(sx, y0 - 0.84 * Hh - hr * 0.9, hr * 1.15, Math.PI, 0); ctx.fill(); }
+  if (a.smoker && !a.alarm && a.hp === 'ok') { const e = 0.6 + 0.4 * Math.sin(s.t * 1.7 + a.id); ctx.fillStyle = `rgba(255,255,255,${e})`; ctx.beginPath(); ctx.arc(sx + dir * 0.32 * k, y0 - 0.8 * Hh, Math.max(1.2, 0.09 * k), 0, 7); ctx.fill(); }
+  ctx.strokeStyle = warm; ctx.lineWidth = Math.max(1, 0.1 * k);
+  const shY = y0 - 0.8 * Hh;
+  if (a.surr) { ctx.beginPath(); ctx.moveTo(sx - 0.18 * k, shY); ctx.lineTo(sx - 0.3 * k, shY - 0.55 * k); ctx.moveTo(sx + 0.18 * k, shY); ctx.lineTo(sx + 0.3 * k, shY - 0.55 * k); ctx.stroke(); }
+  else if (a.armed) { ctx.strokeStyle = gun; ctx.lineWidth = Math.max(1, 0.08 * k); ctx.beginPath(); ctx.moveTo(sx - dir * 0.25 * k, shY + 0.15 * Hh); ctx.lineTo(sx + dir * 0.75 * k, shY + 0.05 * Hh); ctx.stroke(); }
+  else if (!sit) { ctx.beginPath(); ctx.moveTo(sx - 0.2 * k, shY); ctx.lineTo(sx - 0.24 * k, shY + 0.35 * Hh); ctx.moveTo(sx + 0.2 * k, shY); ctx.lineTo(sx + 0.24 * k, shY + 0.35 * Hh); ctx.stroke(); }
+}
+
+function drawDrone(px, py, pw, ph, big) {
+  const s = state, X = droneXf(px, py, pw, ph), k = Math.max(X.s * 1.25, 2.6);
+  ctx.save(); ctx.beginPath(); ctx.rect(px, py, pw, ph); ctx.clip();
+  ctx.fillStyle = '#262626'; ctx.fillRect(px, py, pw, ph);
+  ctx.save(); ctx.translate(X.ox, X.oy); ctx.rotate(s.view.rot); ctx.scale(X.s / 4, X.s / 4); ctx.translate(-s.view.cx * 4, -s.view.cy * 4); ctx.drawImage(baseMap, 0, 0); ctx.restore();
+  // heat of the breach charge lingers on the gate
+  for (const f of s.fx) if (f.kind === 'boom') {
+    const [x, y] = w2s(X, f.x, f.y), age = (s.t - f.t0) / f.dur, r = f.r * X.s * (0.6 + age);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(255,255,255,${1 - age})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  const list = s.actors.filter(droneSees).map(a => { const [x, y] = w2s(X, a.x, a.y); return [x, y, a]; }).filter(q => q[0] > px - 30 && q[0] < px + pw + 30 && q[1] > py - 30 && q[1] < py + ph + 30);
+  list.sort((u, v) => u[1] - v[1]);
+  for (const [x, y, a] of list) drawHot(a, x, y, k, s.view.rot);
+  for (const f of s.fx) if (f.kind === 'flash') {
+    const [x, y] = w2s(X, f.x, f.y); const r = Math.max(4, f.r * X.s * 1.6);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  // grain and vignette
+  ctx.globalAlpha = 0.09; ctx.globalCompositeOperation = 'overlay';
+  const ox = (hash2(s.frame, 3) * 256) | 0, oy = (hash2(s.frame, 5) * 256) | 0;
+  for (let gx = px - ox; gx < px + pw; gx += 256) for (let gy = py - oy; gy < py + ph; gy += 256) ctx.drawImage(grainCv, gx, gy);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  const vg = ctx.createRadialGradient(X.ox, X.oy, Math.min(pw, ph) * 0.35, X.ox, X.oy, Math.max(pw, ph) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = vg; ctx.fillRect(px, py, pw, ph);
+  // Blue Force Tracker: team positions as reported every few seconds, not truth
+  if (s.showBft !== false) for (const b of s.bft) {
+    const [x, y] = w2s(X, b.x, b.y); const r = big ? 9 : 6;
+    ctx.strokeStyle = '#59a8ff'; ctx.lineWidth = 2; ctx.strokeRect(x - r, y - r - 18 * (big ? 1 : 0.6), r * 2, r * 2);
+    ctx.fillStyle = 'rgba(0,10,30,0.75)'; ctx.fillRect(x - r + 1, y - r - 18 * (big ? 1 : 0.6) + 1, r * 2 - 2, r * 2 - 2); text(b.id, x, y - 18 * (big ? 1 : 0.6), big ? 13 : 10, '#8cc4ff', 'center', true);
+  }
+  // track box
+  const tk = s.view.track != null && A(s.view.track);
+  if (tk) {
+    const vis = droneSees(tk); const [x, y] = vis ? w2s(X, tk.x, tk.y) : w2s(X, s.view.tx, s.view.ty);
+    const r = Math.max(10, 1.4 * k); ctx.strokeStyle = vis ? '#fff' : '#999'; ctx.lineWidth = 1.5;
+    ctx.setLineDash(vis ? [] : [4, 4]); ctx.strokeRect(x - r, y - r * 1.6, r * 2, r * 2.2); ctx.setLineDash([]);
+    if (big) text(vis ? 'TRK' : 'TRK COAST', x + r + 4, y - r * 1.6 + 6, 12, '#fff', 'left');
+  }
+  if (s.placing && big) { ctx.strokeStyle = '#59a8ff'; ctx.lineWidth = 2; ctx.strokeRect(px + 2, py + 2, pw - 4, ph - 4); }
+  // sensor symbology
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2;
+  const cx = X.ox, cy = X.oy, g = big ? 14 : 8;
+  ctx.beginPath(); ctx.moveTo(cx - 3 * g, cy); ctx.lineTo(cx - g, cy); ctx.moveTo(cx + g, cy); ctx.lineTo(cx + 3 * g, cy); ctx.moveTo(cx, cy - 3 * g); ctx.lineTo(cx, cy - g); ctx.moveTo(cx, cy + g); ctx.lineTo(cx, cy + 3 * g); ctx.stroke();
+  const m = big ? 24 : 10, L = big ? 30 : 14;
+  ctx.beginPath(); for (const [ax, ay, sx, sy] of [[px + m, py + m, 1, 1], [px + pw - m, py + m, -1, 1], [px + m, py + ph - m, 1, -1], [px + pw - m, py + ph - m, -1, -1]]) { ctx.moveTo(ax, ay + sy * L); ctx.lineTo(ax, ay); ctx.lineTo(ax + sx * L, ay); } ctx.stroke();
+  // north arrow
+  const na = -Math.PI / 2 + s.view.rot, nx = px + pw - (big ? 50 : 26), ny = py + (big ? 110 : 40), nl = big ? 16 : 9;
+  ctx.beginPath(); ctx.moveTo(nx - Math.cos(na) * nl, ny - Math.sin(na) * nl); ctx.lineTo(nx + Math.cos(na) * nl, ny + Math.sin(na) * nl); ctx.stroke();
+  text('N', nx + Math.cos(na) * (nl + 9), ny + Math.sin(na) * (nl + 9), big ? 13 : 10, '#fff');
+  if (big) {
+    const fs = 14;
+    text('MQ-1C  IR  WHT HOT  NFOV', px + 40, py + 44, fs, '#fff', 'left');
+    text(`ALT 9,500 FT   SLT RNG 4.${(Math.round(Math.abs(Math.sin(s.view.rot)) * 9))} KM`, px + 40, py + 64, fs, '#fff', 'left');
+    text(`${fmtClock(s.t)}L`, px + pw - 40, py + 44, fs, '#fff', 'right');
+    text(`ZOOM ${(s.view.z / CONFIG.zoomStart.value).toFixed(1)}x`, px + pw - 40, py + 64, fs, '#fff', 'right');
+    text(`TGT GRID 41S PR ${(4100 + Math.round(s.view.cx * 10)).toString().slice(-4)} ${(6200 - Math.round(s.view.cy * 10)).toString().slice(-4)}`, px + 40, py + ph - 44, fs, '#fff', 'left');
+    if (tk && droneSees(tk)) {
+      const spd = tk.moving ? tk.spd * (tk.hp === 'wia' ? 0.5 : 1) : 0, hdg = Math.round((Math.atan2(Math.cos(tk.face), -Math.sin(tk.face)) * 180 / Math.PI + 360) % 360);
+      text(`TRK 1 PAX   GS ${spd.toFixed(1)} M/S   HDG ${String(hdg).padStart(3, '0')}`, px + pw - 40, py + ph - 44, fs, '#fff', 'right');
+    }
+  } else text('1  DRONE IR', px + 8, py + 14, 12, '#fff', 'left', true);
+  ctx.restore();
+}
+
+// ---- Helmet cams: green night vision raycast from the team leader's helmet ---------------------
+function makeCam(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); return { c, x, img: x.createImageData(w, h), w, h, buf: new Float32Array(w * h), zb: new Float32Array(w), zt: new Float32Array(w) }; }
+const camSmall = [makeCam(104, 54), makeCam(104, 54), makeCam(104, 54)], camBig = makeCam(208, 136);
+const camWearer = id => { const T = state.teams[id]; return T && A(T.members[0]); };
+function renderCam(cam, a) {
+  const s = state, { w, h, buf, zb, zt } = cam, fov = tune.camFov, focal = (w / 2) / Math.tan(fov / 2);
+  const ex = a.x, ey = a.y, look = a.look, inside = at(ex, ey) === ROOF;
+  const hor = h * 0.5 + (a.moving ? Math.sin(a.gait * 3.4) * h * 0.02 : 0);
+  if (!cam.rel || cam.fov !== fov) { cam.fov = fov; cam.rel = new Float32Array(w); for (let x = 0; x < w; x++) cam.rel[x] = Math.atan((x - w / 2) / focal); }
+  for (let y = 0; y < h; y++) {
+    if (y < hor) { buf.fill(inside ? 0.08 : 0.03 + 0.03 * (y / hor), y * w, y * w + w); continue; }
+    const rowD = 1.6 * focal / Math.max(0.6, y - hor);
+    for (let x = 0; x < w; x++) { // the ground, cast row by row so it slides past as he walks
+      const rel = cam.rel[x], dd = rowD / Math.cos(rel), wx = ex + Math.cos(look + rel) * dd, wy = ey + Math.sin(look + rel) * dd, t = at(wx, wy);
+      let v = t === TRACK ? 0.2 : t === FIELD ? (((wy * 1.5) | 0) % 3 === 0 ? 0.07 : 0.15) : t === WADI ? 0.09 : t === ROOF ? 0.18 : 0.13;
+      v += (hash2((wx * 3) | 0, (wy * 3) | 0) - 0.5) * 0.09;
+      buf[y * w + x] = v / (1 + dd * 0.035) + 0.2 / (1 + dd * 0.6);
+    }
+  }
+  if (!inside) for (let k = 0; k < 60; k++) {
+    const rel = wrap(k * 0.1047 + hash2(k, 1) * 0.1 - look); if (Math.abs(rel) > fov / 2) continue;
+    const x = (w / 2 + Math.tan(rel) * focal) | 0, y = (hash2(k, 2) * hor * 0.85) | 0; if (x >= 0 && x < w && y >= 0) buf[y * w + x] = 0.45;
+  }
+  for (let c = 0; c < w; c++) {
+    const ang = look + Math.atan((c - w / 2) / focal), rdx = Math.cos(ang), rdy = Math.sin(ang);
+    let mx = ex | 0, my = ey | 0; const ddx = Math.abs(1 / rdx), ddy = Math.abs(1 / rdy);
+    let sx, sy, sdx, sdy, side = 0, t = -2;
+    if (rdx < 0) { sx = -1; sdx = (ex - mx) * ddx; } else { sx = 1; sdx = (mx + 1 - ex) * ddx; }
+    if (rdy < 0) { sy = -1; sdy = (ey - my) * ddy; } else { sy = 1; sdy = (my + 1 - ey) * ddy; }
+    for (let i = 0; i < 160; i++) {
+      if (sdx < sdy) { sdx += ddx; mx += sx; side = 0; } else { sdy += ddy; my += sy; side = 1; }
+      t = at(mx, my); if (t === WALL || t === GATE || t < 0) break;
+      if (Math.abs(mx - ex) + Math.abs(my - ey) > 140) { t = -2; break; }
+    }
+    if (t === -2) { zb[c] = 1e9; zt[c] = hor; continue; }
+    const dd = side === 0 ? sdx - ddx : sdy - ddy, perp = Math.max(0.05, dd * Math.cos(ang - look));
+    const top = hor - 1.1 * focal / perp, bot = hor + 1.6 * focal / perp;
+    const u = side === 0 ? ey + dd * rdy : ex + dd * rdx;
+    let I = (side ? 0.4 : 0.52) / (1 + perp * 0.05) + 0.22 / (1 + perp * 0.4) + 0.05 * Math.sin(u * 6.3 + mx * 3.1 + my * 1.7);
+    if (t === GATE) I *= 0.45; if (t < 0) I = 0.05;
+    zb[c] = perp; zt[c] = Math.max(0, top);
+    const uc = (u * 1.6) | 0;
+    for (let y = Math.max(0, top | 0); y < Math.min(h, Math.ceil(bot)); y++) {
+      const hw = 1.6 - (y - hor) * perp / focal, band = (hw * 3.2) | 0; // mud-brick courses
+      buf[y * w + c] = I * (0.86 + 0.14 * hash2(uc + band * 7, band)) * (hw > 2.6 ? 0.7 : 1);
+    }
+  }
+  // people, dogs and trucks in view, back to front
+  const list = [];
+  for (const p of s.actors) {
+    if (p === a || p.mounted || p.gone) continue;
+    const dx = p.x - ex, dy = p.y - ey, d = Math.hypot(dx, dy); if (d < 0.4 || d > 70) continue;
+    const rel = wrap(Math.atan2(dy, dx) - look); if (Math.abs(rel) > fov / 2 + 0.3) continue;
+    const depth = d * Math.cos(rel); if (depth < 0.3) continue; list.push([depth, p, rel]);
+  }
+  list.sort((u, v) => v[0] - u[0]);
+  let flash = 0;
+  for (const [depth, p, rel] of list) {
+    const sx = w / 2 + Math.tan(rel) * focal, kk = focal / depth, elev = p.onRoof ? 2.9 : 0;
+    let ht = 1.75, wd = 0.5;
+    if (p.role === 'truck') { ht = 2.2; wd = 4.5; } else if (p.role === 'dog') { ht = 0.55; wd = 0.8; } else if (p.role === 'child') { ht = 1.2; wd = 0.4; }
+    const lying = p.role !== 'truck' && isLying(p);
+    if (lying) { ht = 0.35; wd = 1.6; } else if (p.posture === 'sit' || s.t < p.peekUntil) ht *= 0.6;
+    const foot = hor + (1.6 - elev) * kk, top = foot - ht * kk, half = wd * kk / 2;
+    const I = (p.role === 'truck' ? 0.45 : 0.8) / (1 + depth * 0.04);
+    const human = !lying && p.role !== 'truck' && p.role !== 'dog', sitting = p.posture === 'sit' || s.t < p.peekUntil;
+    const sw = p.moving ? Math.sin(p.gait * 3) * 0.12 : 0, robe = p.side !== 'blue' && p.role !== 'dog';
+    for (let y = Math.max(0, top | 0); y <= Math.min(h - 1, foot | 0); y++) {
+      const f = (y - top) / Math.max(1, foot - top); // 0 at the head, 1 at the feet
+      let spans;
+      if (!human) spans = [[-1, 1]];
+      else if (f < 0.13) { const q = (f - 0.065) / 0.065, r = 0.26 * Math.sqrt(Math.max(0, 1 - q * q)); spans = [[-r, r]]; }
+      else if (f < 0.17) spans = [[-0.14, 0.14]];
+      else if (f < (sitting ? 0.75 : robe ? 0.72 : 0.56)) { const r = f < 0.24 ? 0.4 + (f - 0.17) * 6 : robe ? 0.75 + (f - 0.24) * 0.5 : 0.82; spans = [[-r, r]]; }
+      else if (sitting || (robe && p.role === 'woman')) spans = [[-0.8, 0.8]];
+      else spans = [[-0.42 + sw, -0.06 + sw], [0.06 - sw, 0.42 - sw]];
+      const fade = human ? 0.85 + 0.15 * (1 - f) : 1;
+      for (const [l, r] of spans) for (let x = Math.max(0, Math.floor(sx + l * half)); x <= Math.min(w - 1, Math.ceil(sx + r * half)); x++)
+        if (depth < zb[x] || (elev > 0 && y < zt[x])) buf[y * w + x] = I * fade;
+    }
+    const vis = (x, y) => x >= 0 && x < w && y >= 0 && y < h && (depth < zb[x] || (elev > 0 && y < zt[x]));
+    if (p.side === 'blue' && p.role === 'soldier' && ((s.t * 1.2 + p.id * 0.37) % 1) < 0.1) { const x = sx | 0, y = (top - 1) | 0; if (vis(x, y)) buf[y * w + x] = 1.6; }
+    if (s.t - p.firedT < 0.08) { const fx = (sx + Math.cos(p.face - look) * half * 1.4) | 0, fy = (top + ht * kk * 0.3) | 0, r = Math.max(1, kk * 0.35); for (let y = fy - r; y <= fy + r; y++) for (let x = fx - r; x <= fx + r; x++) if (vis(x | 0, y | 0)) buf[(y | 0) * w + (x | 0)] = 1.8; flash += 0.25 / (1 + depth * 0.1); }
+  }
+  // IR aiming lasers, seen only through night vision
+  const aiming = q => q.side === 'blue' && q.role === 'soldier' && q.hp === 'ok' && !q.mounted && (['breach', 'clear'].includes(s.phase) && q.team === 'A' || s.t - q.firedT < 4 || q.job != null || (state.teams[q.team] && state.teams[q.team].chase != null));
+  for (const q of [a, ...list.map(l => l[1])]) {
+    if (!aiming(q)) continue;
+    for (let j = (q === a ? 3 : 1); j < 40; j++) {
+      const lx = q.x + Math.cos(q.look) * j * 0.4, ly = q.y + Math.sin(q.look) * j * 0.4, dx = lx - ex, dy = ly - ey;
+      const rel = wrap(Math.atan2(dy, dx) - look), depth = Math.hypot(dx, dy) * Math.cos(rel); if (depth < 0.3 || Math.abs(rel) > fov / 2) continue;
+      const x = (w / 2 + Math.tan(rel) * focal) | 0, y = (hor + (1.6 - 1.35 + (q === a ? 0.2 : 0)) * focal / depth) | 0;
+      if (x >= 0 && x < w && y >= 0 && y < h && depth < zb[x]) buf[y * w + x] = Math.max(buf[y * w + x], 1.2);
+    }
+  }
+  for (const f of s.fx) if (f.kind === 'boom') { const d = Math.hypot(f.x - ex, f.y - ey), age = (s.t - f.t0); if (age < 0.6) flash += (1 - age / 0.6) * 3 / (1 + d * 0.08); }
+  const d = cam.img.data, fr = s.frame * 7919;
+  for (let i = 0; i < w * h; i++) {
+    let v = buf[i] + flash + (hash2(i, fr) - 0.5) * 0.09; v = clamp(v, 0, 1.4);
+    const q = i * 4; d[q] = clamp(v * v * 140, 0, 255); d[q + 1] = clamp(v * 255, 0, 255); d[q + 2] = clamp(v * v * 120 + v * 30, 0, 255); d[q + 3] = 255;
+  }
+  cam.x.putImageData(cam.img, 0, 0);
+}
+function drawCam(id, px, py, pw, ph, big, key) {
+  const s = state, a = camWearer(id), T = s.teams[id];
+  ctx.save(); ctx.beginPath(); ctx.rect(px, py, pw, ph); ctx.clip();
+  if (!a || a.hp === 'kia') {
+    ctx.fillStyle = '#000'; ctx.fillRect(px, py, pw, ph);
+    for (let i = 0; i < 300; i++) { const v = hash2(i, s.frame) * 120; ctx.fillStyle = `rgb(${v * 0.4},${v},${v * 0.5})`; ctx.fillRect(px + hash2(i, s.frame + 1) * pw, py + hash2(i, s.frame + 2) * ph, 3, 2); }
+    text('NO SIGNAL', px + pw / 2, py + ph / 2, big ? 28 : 16, '#7f7', 'center', true);
+  } else {
+    const cam = big ? camBig : camSmall[['A', 'B', 'C'].indexOf(id)];
+    renderCam(cam, a); ctx.imageSmoothingEnabled = true; ctx.drawImage(cam.c, px, py, pw, ph);
+    ctx.fillStyle = 'rgba(0,18,0,0.9)'; ctx.beginPath();
+    ctx.moveTo(px + pw * 0.6, py + ph); ctx.lineTo(px + pw * 0.66, py + ph * 0.84); ctx.lineTo(px + pw * 0.74, py + ph * 0.8); ctx.lineTo(px + pw * 0.8, py + ph * 0.86); ctx.lineTo(px + pw * 0.78, py + ph); ctx.fill();
+    const vg = ctx.createRadialGradient(px + pw / 2, py + ph / 2, ph * 0.3, px + pw / 2, py + ph / 2, pw * 0.62);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.75)'); ctx.fillStyle = vg; ctx.fillRect(px, py, pw, ph);
+    if (a.hp === 'wia') text('WEARER WOUNDED', px + pw / 2, py + ph - 20, big ? 18 : 12, '#ff7', 'center', true);
+  }
+  const fs = big ? 15 : 12;
+  text(`${key}  HELMET ${id}-1  ${T.task}`, px + 8, py + 14, fs, '#cfc', 'left', true);
+  if (big) text(`${fmtClock(s.t)}L`, px + pw - 12, py + 16, fs, '#cfc', 'right');
+  if ((s.frame >> 5) % 2) { ctx.fillStyle = '#f44'; ctx.beginPath(); ctx.arc(px + pw - (big ? 12 : 10), py + (big ? 40 : 14), big ? 5 : 3.5, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+
+// ---- Command post layout ----------------------------------------------------------------------------
+const MAIN = [0, 0, 900, 600];
+const SIDE = [[904, 0, 376, 198], [904, 201, 376, 198], [904, 402, 376, 198]];
+const BTN = [
+  { code: 'KeyG', label: 'GO', key: 'G', x: 784 }, { code: 'KeyW', label: 'WAIT', key: 'W', x: 882 }, { code: 'KeyX', label: 'ABORT', key: 'X', x: 980 },
+  { code: 'KeyR', label: 'RESERVE', key: 'R', x: 1078 }, { code: 'KeyI', label: 'INTERCEPT', key: 'I', x: 1176 },
+].map(b => Object.assign(b, { y: 642, w: 94, h: 46 }));
+const sideFeeds = () => [0, 1, 2, 3].filter(f => f !== state.main);
+function drawFeed(f, x, y, w, h, big) { if (f === 0) drawDrone(x, y, w, h, big); else drawCam(['A', 'B', 'C'][f - 1], x, y, w, h, big, f + 1); }
+function wrapText(str, maxW, size) {
+  ctx.font = `${size}px ${FONT}`; const words = str.split(' '), out = []; let line = '';
+  for (const wd of words) { const t = line ? line + ' ' + wd : wd; if (ctx.measureText(t).width > maxW && line) { out.push(line); line = wd; } else line = t; }
+  if (line) out.push(line); return out;
+}
+function drawCP() {
+  const s = state;
+  clear('#000');
+  drawFeed(s.main, ...MAIN, true);
+  sideFeeds().forEach((f, i) => { drawFeed(f, ...SIDE[i], false); ctx.strokeStyle = '#333'; ctx.strokeRect(SIDE[i][0] + 0.5, SIDE[i][1] + 0.5, SIDE[i][2] - 1, SIDE[i][3] - 1); });
+  // bottom: radio and duty log, and the decision buttons
+  ctx.fillStyle = '#0b0e0b'; ctx.fillRect(0, 600, W, 120); ctx.fillStyle = '#2a332a'; ctx.fillRect(0, 600, W, 2); ctx.fillRect(772, 600, 2, 120);
+  const lines = [];
+  for (let i = s.radio.length - 1; i >= 0 && lines.length < 7; i--) {
+    const r = s.radio[i], col = r.kind === 'ask' ? '#ffcf5a' : r.from === 'CP' ? '#e8e8e8' : r.from === 'UAV' ? '#9ccfff' : '#9fdc9f';
+    const parts = wrapText(`${fmtClock(r.t)} ${r.from}: ${r.txt}`, 670, 14);
+    for (let j = parts.length - 1; j >= 0 && lines.length < 7; j--) lines.push([j ? '         ' + parts[j] : parts[j], col]);
+  }
+  lines.forEach(([t, c], i) => text(t, 12, 708 - i * 15.5, 14, c, 'left'));
+  let prompt = '', pc = '#9fdc9f';
+  if (s.ask) { prompt = { gate1: 'GFC asks: GO to isolate the objective?', gate2: 'GFC asks: GO to breach?', contact: 'GFC asks: continue, or break contact?' }[s.ask.kind]; pc = (s.frame >> 4) % 2 ? '#ffcf5a' : '#ffe9a8'; }
+  else if (s.placing) { prompt = 'Click the drone feed to place the reserve.'; pc = '#59a8ff'; }
+  else if (s.t < s.hintUntil) { prompt = s.hint; pc = '#e8e8e8'; }
+  else prompt = { infil: 'Ground force moving to the release point.', isolate: 'Cordon moving into position.', breach: 'Breach charge set.', clear: 'Assault element clearing the compound.', sse: 'Site exploitation.', exfil: 'Exfil to the drop-off.', abort: 'ABORTED. Returning to the drop-off.', done: '' }[s.phase] + (s.waitKind ? '  (holding on your WAIT)' : '');
+  const pl = wrapText(prompt, 486, 15); pl.slice(0, 2).forEach((t, i) => text(t, 784, 616 + i * 17, 15, pc, 'left', true));
+  for (const b of BTN) {
+    const live = b.code === 'KeyG' || b.code === 'KeyW' ? !!s.ask : b.code === 'KeyX' ? !['exfil', 'abort', 'done'].includes(s.phase) : b.code === 'KeyR' ? true : (s.view.track != null && A(s.view.track).side !== 'blue');
+    const hot = (b.code === 'KeyR' && s.placing) || (s.ask && (b.code === 'KeyG' || b.code === 'KeyW')) || (b.code === 'KeyX' && s.t - s.abortArm < 3);
+    const base = b.code === 'KeyX' ? '#ff6b5a' : b.code === 'KeyG' ? '#7ee07e' : b.code === 'KeyR' || b.code === 'KeyI' ? '#59a8ff' : '#ffcf5a';
+    ctx.fillStyle = hot ? base : '#141a14'; ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = live ? base : '#3a443a'; ctx.lineWidth = 2; ctx.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+    const tc = hot ? '#000' : live ? base : '#8a948c';
+    text(b.label, b.x + b.w / 2, b.y + 18, 15, tc, 'center', true); text(`[${b.key}]`, b.x + b.w / 2, b.y + 35, 13, tc);
+  }
+  text(`${fmtClock(s.t)}L   ${s.paused ? 'PAUSED' : s.fast ? 'TIME x' + tune.timeFast : 'TIME x1'}   [T] fast  [Space] pause  [1-4] feeds`, 784, 706, 14, s.paused ? '#ffcf5a' : '#8a9a8a', 'left');
+}
+
+// ---- Scenes ------------------------------------------------------------------------------------------
+const FIG = [
+  ['soldier', 'blue', true, 'Soldier'], ['guard', 'red', true, 'Armed man'], ['target', 'red', false, 'ZAHID (limps)'], ['man', 'civ', false, 'Unarmed man'],
+  ['teen', 'civ', false, 'Teenager'], ['woman', 'civ', false, 'Woman'], ['child', 'civ', false, 'Child'], ['dog', 'civ', false, 'Dog'],
+];
+const scenes = {
+  figures: {
+    update(dt) { state.t += dt; },
+    draw() {
+      clear('#2a2a2a'); text('Figures on the drone feed (thermal, white hot)', W / 2, 40, 22, '#fff');
+      FIG.forEach(([role, side, armed, name], i) => {
+        const x = 90 + i * 150, y = 250;
+        drawHot({ role, side, armed, hp: 'ok', posture: 'stand', face: 0, gait: 0.7, moving: true, state: 'idle', peekUntil: 0 }, x, y, 30, 0);
+        text(name, x, y + 40, 15, '#fff');
+      });
+      const extra = [[{ role: 'fighter', side: 'red', armed: true, hp: 'ok', posture: 'prone', face: 0, state: 'idle' }, 'Fighter, prone'], [{ role: 'man', side: 'civ', hp: 'ok', posture: 'prone', face: 0, state: 'sleep' }, 'Sleeper, blanket'],
+        [{ role: 'man', side: 'civ', hp: 'ok', posture: 'stand', face: 0, surr: true, state: 'surrender' }, 'Hands up'], [{ role: 'man', side: 'civ', hp: 'ok', posture: 'sit', detained: true, face: 0, state: 'detained' }, 'Detained, seated'],
+        [{ role: 'soldier', side: 'blue', hp: 'kia', posture: 'prone', face: 0, deathT: 0, state: 'idle' }, 'Casualty'], [{ role: 'truck', side: 'blue', face: 0 }, 'Truck']];
+      extra.forEach(([a, name], i) => { const x = 110 + i * 200, y = 470; drawHot(Object.assign({ gait: 0, moving: false, peekUntil: 0 }, a), x, y, a.role === 'truck' ? 14 : 30, 0); text(name, x, y + 55, 15, '#fff'); });
+    },
+  },
+  title: {
+    update() { if (pressed('Enter') || pressed('Space')) { reset(); scene = 'play'; } },
+    draw() {
+      clear('#060906');
+      text(TITLE, 80, 80, 56, '#cfe8cf', 'left', true);
+      text('One night raid, from the command post.', 82, 128, 20, '#8fb08f', 'left');
+      const brief = [
+        ['TIP  0140L', '#ffcf5a'], ['A local source says Qari ZAHID, the cell leader, is sleeping tonight at the', '#ddd'],
+        ['compound of Haji Wali (OBJ RAVEN). Source reliability C, information unconfirmed.', '#ddd'],
+        ['ZAHID: forties, walks with a limp in his left leg. Biometrics on file.', '#ddd'], ['', '#ddd'],
+        ['YOU  company commander in the CP', '#ffcf5a'], ['The ground force commander runs the raid with three squads and a reserve.', '#ddd'],
+        ['He asks you at each gate: GO, WAIT, or ABORT. You see only what the drone\'s', '#ddd'],
+        ['thermal camera and the helmet cams show, and what he reports on the radio.', '#ddd'],
+        ['The drone cannot see under roofs. Waiting costs time; ZAHID will not stay all night.', '#ddd'],
+      ];
+      brief.forEach(([t, c], i) => text(t, 82, 190 + i * 26, 18, c, 'left'));
+      CONTROLS.forEach((c, i) => text(c, 82, 480 + i * 28, 17, '#9fdc9f', 'left'));
+      text('Enter to begin infil', 82, 640, 24, '#fff', 'left', true);
+    },
+  },
+  play: {
+    update(dt) {
+      const s = state;
+      if (pressed('KeyP') || pressed('Escape')) { scene = 'pause'; return; }
+      if (pressed('Space')) s.paused = !s.paused;
+      if (pressed('KeyT')) s.fast = !s.fast;
+      for (let i = 1; i <= 4; i++) if (pressed('Digit' + i) || pressed('Numpad' + i)) s.main = i - 1;
+      if (pressed('KeyB')) s.showBft = s.showBft === false;
+      if (pressed('KeyG')) cmdGo(); if (pressed('KeyW')) cmdWait(); if (pressed('KeyX')) cmdAbort();
+      if (pressed('KeyR')) cmdReserve(); if (pressed('KeyI')) cmdIntercept();
+      if (pressed('Tab')) { const vis = persons().filter(a => a.side !== 'blue' && droneSees(a) && a.role !== 'dog' && !a.detained && a.hp === 'ok'); if (vis.length) { const i = vis.findIndex(a => a.id === s.view.track); s.view.track = vis[(i + 1) % vis.length].id; s.main = 0; } }
+      if (pressed('Equal') || pressed('NumpadAdd')) s.view.z = clamp(s.view.z * 1.25, 1.5, 20);
+      if (pressed('Minus') || pressed('NumpadSubtract')) s.view.z = clamp(s.view.z / 1.25, 1.5, 20);
+      let px = 0, py = 0; if (down.has('ArrowLeft')) px -= 1; if (down.has('ArrowRight')) px += 1; if (down.has('ArrowUp')) py -= 1; if (down.has('ArrowDown')) py += 1;
+      if (px || py) { const X = droneXf(...MAIN), v = 500 * dt; pan(X, -px * v, -py * v); }
+      if (s.paused) return;
+      const n = s.fast ? tune.timeFast : 1;
+      for (let i = 0; i < n && scene === 'play'; i++) sim(dt);
+    },
+    draw() { drawCP(); },
+  },
+  pause: {
+    update() { if (pressed('KeyP') || pressed('Escape')) scene = 'play'; },
+    draw() { drawCP(); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H); text('Paused', W / 2, H / 2, 48, '#fff'); },
+  },
+  results: {
+    update() { if (pressed('Enter')) { runSeed++; reset(); scene = 'play'; } },
+    draw() {
+      drawCP(); const s = state, r = s.result || { tgt: '', truth: '' }, st = s.stats;
+      ctx.fillStyle = 'rgba(0,8,0,0.88)'; ctx.fillRect(200, 110, 880, 470); ctx.strokeStyle = '#9fdc9f'; ctx.strokeRect(200.5, 110.5, 879, 469);
+      text('AFTER ACTION', 640, 150, 30, '#cfe8cf', 'center', true);
+      text(r.tgt, 640, 200, 24, s.gained === 'JACKPOT' ? '#7ee07e' : '#ffcf5a', 'center', true);
+      text(`What was really there: ${r.truth}`, 640, 240, 17, '#ddd');
+      const rows = [['Friendly', `${st.fkia} KIA, ${st.fwia} WIA`], ['Civilians', `${st.ckia} killed, ${st.cwia} wounded`], ['Enemy', `${st.ekia} killed, ${st.ewia} wounded`],
+        ['Detained', `${s.stats.det}`], ['Time on the ground', `${Math.floor(s.t / 60)} min ${Math.floor(s.t % 60)} s, back at the drop-off ${fmtClock(s.t)}`]];
+      rows.forEach(([a, b], i) => { text(a, 440, 300 + i * 34, 19, '#9fdc9f', 'right'); text(b, 470, 300 + i * 34, 19, '#fff', 'left'); });
+      text('Enter: another night (a new tip, a new truth)', 640, 540, 20, '#fff', 'center', true);
+    },
+  },
+};
+
+// ---- Pointer: slew, zoom, track, click panels and buttons --------------------------------------------
+let drag = null;
+const lp = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
+const inR = (x, y, r) => x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
+function pan(X, dx, dy) { const v = state.view; v.cx -= (dx * X.c + dy * X.n) / X.s; v.cy -= (-dx * X.n + dy * X.c) / X.s; v.cx = clamp(v.cx, 0, MW); v.cy = clamp(v.cy, 0, MH); v.track = null; }
+canvas.addEventListener('pointerdown', e => {
+  startAudio(); const [x, y] = lp(e);
+  if (scene === 'title' || scene === 'results') { hit.add('Enter'); return; }
+  if (scene !== 'play') return;
+  const b = BTN.find(b => inR(x, y, [b.x, b.y, b.w, b.h])); if (b) { hit.add(b.code); return; }
+  const si = SIDE.findIndex(r => inR(x, y, r)); if (si >= 0) { state.main = sideFeeds()[si]; return; }
+  if (inR(x, y, MAIN) && state.main === 0) { drag = { x, y, sx: x, sy: y, moved: false }; canvas.setPointerCapture(e.pointerId); }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return; const [x, y] = lp(e);
+  if (Math.hypot(x - drag.sx, y - drag.sy) > 5) drag.moved = true;
+  if (drag.moved) pan(droneXf(...MAIN), x - drag.x, y - drag.y);
+  drag.x = x; drag.y = y;
+});
+canvas.addEventListener('pointerup', () => {
+  if (drag && !drag.moved) {
+    const s = state, X = droneXf(...MAIN), [wx, wy] = s2w(X, drag.sx, drag.sy);
+    if (s.placing) placeReserve(wx, wy);
+    else {
+      let best = null, bd = Math.max(3, 14 / X.s);
+      for (const a of s.actors) if (droneSees(a)) { const d = Math.hypot(a.x - wx, a.y - (wy + 0.8)); if (d < bd) { bd = d; best = a; } }
+      s.view.track = best ? best.id : null; if (best) events.push({ kind: 'track', id: best.id });
+    }
+  }
+  drag = null;
+});
+canvas.addEventListener('wheel', e => { if (scene !== 'play' || state.main !== 0) return; e.preventDefault(); state.view.z = clamp(state.view.z * Math.exp(-e.deltaY * 0.0015), 1.5, 20); }, { passive: false });
+
+// ---- Loop -------------------------------------------------------------------------------------------
+function step() {
+  if (pressed('KeyM')) { setMuted(!muted); hit.delete('KeyM'); }
+  if (scene === 'play' || scene === 'results' || scene === 'pause') state.frame = (state.frame || 0) + (scene === 'play' ? 0 : 1);
+  scenes[scene].update(STEP); hit.clear();
+}
+let last, acc = 0, ALPHA = 1;
+function tick() {
+  const now = clock.now();
+  acc += Math.min(now - last, 0.25); last = now;
+  while (acc >= STEP) { step(); acc -= STEP; }
+  ALPHA = acc / STEP;
+  drawFrame();
+}
+function drawFrame() { scenes[scene].draw(); }
+function frame() { tick(); requestAnimationFrame(frame); }
+function timer() { if (document.visibilityState === 'visible' && clock.now() - last > 0.1) tick(); }
+
+window.game = {
+  get scene() { return scene; },
+  get state() { return state; },
+  press(code) { hit.add(code); },
+  hold(code, on) { on ? down.add(code) : down.delete(code); },
+  get events() { return events; },
+  step(n = 1, draw = true, alpha = 1) {
+    for (let i = 0; i < n; i++) step();
+    if (draw) { ALPHA = alpha; drawFrame(); }
+  },
+};
+
+reset();
+scene = params.get('scene') || 'title';
+last = clock.now();
+if (params.get('manual') === '1') drawFrame();
+else { requestAnimationFrame(frame); setInterval(timer, 50); }
+</script>
+</body>
+</html>
