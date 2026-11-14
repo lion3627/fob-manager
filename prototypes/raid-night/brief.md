@@ -28,6 +28,7 @@ raid night on an uncertain tip, watched through drone and helmet-cam feeds, with
 The tip is right, wrong (he is next door) or a setup (fighters on a nearby roof), chosen by the seed. Waiting to watch costs time and raises the chance a dog, a man on the roof or a phone call gives you away. A runner over the back wall forces a choice: send the south cordon after him and open a gap, or release the reserve. A loss is the target escaping, an empty house, or casualties; the debrief counts them. *(provisional)*
 
 ## Core loop
+- Plan first, while the clock runs: watch the objective, mark threats, choose drop-off, entry, cordon, reserve and abort criteria; approve the GFC's back-brief, or call it off.
 - Watch the feeds for indicators; decide go, wait or abort at each gate.
 - The ground force acts on its own; the compound reacts to what it notices.
 - React to what the drone shows: track a runner, intercept, release the reserve.
@@ -46,11 +47,13 @@ The tip is right, wrong (he is next door) or a setup (fighters on a nearby roof)
 - [ ] Three possible truths behind the tip: right, next door, a setup
 - [ ] A reserve you can release, and intercept orders for a tracked runner
 - [ ] Gunfire seen as flashes, casualties, a debrief at the end
+- [ ] Planning before launch (Dean's pick, 2026-11-14): the clock runs from 01:45 toward first light; drop-off far or near, entry by explosive breach, callout or quiet entry, cordon and reserve placed on the map, abort criteria the GFC acts on himself, threat marks the force routes around, a back-brief to approve or revise, and a no-go
 
 ## Your systems
 - thermal drone feed · in the slice
 - helmet cams · in the slice
 - go, wait and abort calls · in the slice
+- raid planning and back-brief · in the slice
 
 ## Keep
 -

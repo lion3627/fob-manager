@@ -4,7 +4,7 @@
 kind: check-run/1
 engine: web
 browser: "HeadlessChrome/153.0.0.0"
-time: "2026-11-14 06:10:44"
+time: "2026-11-14 06:37:46"
 checks:
   - id: boots
     result: pass
@@ -75,6 +75,10 @@ brief_checklist:
     result: pass
     evidence: "evidence/play.png"
     item: "Gunfire seen as flashes, casualties, a debrief at the end"
+  - id: F9
+    result: pass
+    evidence: "evidence/backbrief.png"
+    item: "Planning before launch (Dean's pick, 2026-11-14): the clock runs from 01:45 toward first light; drop-off far or near, entry by explosive breach, callout or quiet entry, cordon and reserve placed on the map, abort criteria the GFC acts on himself, threat marks the force routes around, a back-brief to approve or revise, and a no-go"
   - id: S1
     result: pass
     evidence: "evidence/drone-zoom-setup.png"
@@ -87,6 +91,10 @@ brief_checklist:
     result: pass
     evidence: "index.html:654"
     item: "go, wait and abort calls · in the slice"
+  - id: S4
+    result: pass
+    evidence: "evidence/plan.png"
+    item: "raid planning and back-brief · in the slice"
   - id: M1
     result: pass
     evidence: "evidence/play.png"
@@ -143,7 +151,7 @@ brief_checklist:
     item: "*(provisional)*"
 measures:
   - id: step-time
-    value: 202.000
+    value: 203.500
     unit: ms
     by: browser
-    detail: "mean 0.413 ms, slowest 202.000 ms, 538 steps"
+    detail: "mean 0.538 ms, slowest 203.500 ms, 414 steps"

@@ -25,3 +25,5 @@ C2	pass	index.html:409	Waiting: random waking, dog barks bring someone up on the
 C3	pass	index.html:765	A runner can be tracked and intercepted; the nearest of B, C or R goes, so a cordon team leaving opens its side.
 C4	pass	index.html:733	Debrief counts the target result, friendly, civilian and enemy casualties, detainees and time.
 C5	not_assessed	-	Marker line in the brief with no content of its own.
+F9	pass	evidence/backbrief.png	Plan panel (drop-off, entry, cordon, reserve, abort criteria), threat marks, no-go, back-brief with approve or revise (index.html:860); clock runs from 01:45.
+S4	pass	evidence/plan.png	Raid planning and back-brief in the slice.

@@ -20,14 +20,17 @@ window.CONFIG = {
   truck: { value: 7, min: 2, max: 15, step: 0.5 },             // the reserve's vehicle
 
   // Being noticed
-  dogHear: { value: 32, min: 5, max: 80, step: 1 },            // m: the dog hears soldiers moving
+  dogHear: { value: 24, min: 5, max: 80, step: 1 },            // m: the dog hears soldiers moving
   eyeRange: { value: 30, min: 10, max: 120, step: 1 },         // m: someone awake outdoors sees soldiers
-  wakeChance: { value: 0.004, min: 0, max: 0.05, step: 0.001 },// per second: someone in the house gets up
+  wakeChance: { value: 0.0003, min: 0, max: 0.02, step: 0.0001 },// per second: a sleeper gets up for a while
   warnDelay: { value: 14, min: 0, max: 60, step: 1 },          // s: from alarm to the target moving
   waitAsk: { value: 25, min: 5, max: 90, step: 5 },            // s: a WAIT before the commander asks again
 
-  leaveMin: { value: 240, min: 30, max: 3600, step: 30 },      // s: earliest the target moves on by himself tonight
-  leaveMax: { value: 900, min: 60, max: 3600, step: 30 },      // s: latest he moves on
+  leaveMin: { value: 1500, min: 60, max: 9000, step: 60 },     // s after 01:45: earliest the target moves on by himself tonight
+  leaveMax: { value: 4500, min: 60, max: 9000, step: 60 },     // s after 01:45: latest he moves on
+  planSpeed: { value: 6, min: 1, max: 30, step: 1 },           // clock speed while planning and on the convoy
+  convoyFar: { value: 600, min: 60, max: 1800, step: 30 },     // s: launch to boots on the ground, far drop-off (drive and walk in)
+  convoyNear: { value: 300, min: 60, max: 1800, step: 30 },    // s: launch to boots on the ground, near drop-off
   challenge: { value: 18, min: 3, max: 60, step: 1 },          // m: a soldier challenges a moving person
   haltChance: { value: 0.8, min: 0, max: 4, step: 0.1 },       // per second: a challenged unarmed person stops
   sseTime: { value: 40, min: 5, max: 300, step: 5 },           // s: site exploitation before exfil
