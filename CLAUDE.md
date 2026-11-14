@@ -33,3 +33,15 @@ python3 tools/build.py
 - Work on a branch per change; do not commit to `main` directly.
 - Build the smallest working version and show it running. Do not substitute a design document for implementation.
 - The owner wants natural progression, staff-gated automation, and real procedure. Check `docs/DESIGN.md` before proposing features.
+
+## Game studio toolkit
+
+`.claude/` holds the agents, skills and rules from [Claude Code Game Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) (MIT, copy of its licence in `.claude/LICENSE-Claude-Code-Game-Studios`, taken from commit `abc0de7`). Use its skills, such as `/design-system`, `/quick-design`, `/brainstorm`, `/prototype` and `/code-review`, and its specialist agents where they help. Its reference docs live in `.claude/docs/` and are read on demand, not loaded every session.
+
+How it fits this project:
+
+- **This file wins.** The rules above (real US Army procedure, the three separate layers, nothing faked, mission-command autonomy, realism first) override anything in the toolkit. Where a skill's template asks for something these rules forbid, follow these rules and say so.
+- **Collaboration protocol.** Question, then options, then the owner's decision, then a draft, then approval. Design one section at a time with 2 to 4 options and the owner's pick; never generate a whole design or a whole build in one pass. See `.claude/docs/coordination-rules.md`.
+- **Engine and code.** The engine is plain browser JavaScript with no dependencies (see Engineering conventions above). Ignore the toolkit's engine-specialist agents for Godot, Unity and Unreal, and its generic coding standards where they conflict with this file.
+- **Working software over documents.** Keep design notes short and build small playable increments. A skill that wants a long document gets a one-page brief instead.
+- **Hooks are off.** The toolkit's `settings.json` (hooks, status line, permission rules) was deliberately not installed, so the scripts in `.claude/hooks/` do not run automatically. Skills may still call helper scripts in `.claude/scripts/` when you use them.
