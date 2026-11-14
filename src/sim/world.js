@@ -132,9 +132,17 @@
     if (dist[b] >= 1e12) return null; const p = []; let c = b; while (c !== a) { p.unshift(c); c = prev[c]; } return p;
   };
   F.routeLen = (W, a, path) => { let d = 0, c = a; for (const n of path) { d += F.dist(W.map.nodes[c], W.map.nodes[n]); c = n; } return d; };
-  F.blocked = (W, a, b) => { // line of sight against ridge circles
+  F.blocked = (W, a, b, radio) => { // line of sight against ridge circles; for sight (not radio) also walls, closed doors and floors
     for (const c of W.map.blockers) { const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy; let t = l2 ? ((c.x - a.x) * dx + (c.y - a.y) * dy) / l2 : 0; t = F.clamp(t, 0, 1); if (Math.hypot(a.x + dx * t - c.x, a.y + dy * t - c.y) < c.r * 0.92) return true; }
+    if (radio || !W.map.walls) return false;
+    const fa = a.f || 0; if (fa !== (b.f || 0)) return true;
+    for (const s of W.map.walls) { if (s.f && !s.f.includes(fa)) continue; if (s.door && W.map.doors[s.door].open) continue; if (F.segX(a.x, a.y, b.x, b.y, s.x1, s.y1, s.x2, s.y2)) return true; }
     return false;
+  };
+  F.segX = (ax, ay, bx, by, cx, cy, dx, dy) => { // do segments AB and CD cross?
+    const o = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+    const d1 = o(cx, cy, dx, dy, ax, ay), d2 = o(cx, cy, dx, dy, bx, by), d3 = o(ax, ay, bx, by, cx, cy), d4 = o(ax, ay, bx, by, dx, dy);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0)) && d1 !== 0 && d2 !== 0;
   };
   F.coverAt = (W, p) => { let c = 0; for (const z of W.map.cover) if (Math.hypot(p.x - z.x, p.y - z.y) <= z.r && z.c > c) c = z.c; return c; };
   F.atFob = (W, p) => Math.abs(p.x - W.map.nodes.fob.x) < 130 && Math.abs(p.y - W.map.nodes.fob.y) < 110;

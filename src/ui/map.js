@@ -25,7 +25,7 @@
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     cv.addEventListener('wheel', e => { e.preventDefault(); zoom(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.offsetX, e.offsetY); }, { passive: false });
   };
-  function zoom(k, px, py) { const w = UI.toWorld(px, py); cam.s = F.clamp(cam.s * k, 0.02, 6); const w2 = UI.toWorld(px, py); cam.x += w.x - w2.x; cam.y += w.y - w2.y; }
+  function zoom(k, px, py) { const w = UI.toWorld(px, py); cam.s = F.clamp(cam.s * k, 0.02, 30); const w2 = UI.toWorld(px, py); cam.x += w.x - w2.x; cam.y += w.y - w2.y; }
   UI.zoomBy = k => zoom(k, Wd / 2, Ht / 2);
   UI.look = (p, s) => { cam.x = p.x; cam.y = p.y; if (s) cam.s = s; };
 
@@ -58,7 +58,7 @@
       const s = W.soldiers[id]; if (s.evac) continue; const x = X(s.pos.x), y = Y(s.pos.y); if (x < -5 || y < -5 || x > Wd + 5 || y > Ht + 5) continue;
       if (s.inVeh && cam.s < 1.2) continue;
       if (s.state === 'kia') { ctx.strokeStyle = col.mute; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke(); continue; }
-      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = s.state === 'wia' ? col.warn : s.side === 'blue' ? col.friend : col.host; ctx.fill();
+      const fc = s.state === 'wia' ? col.warn : s.side === 'blue' ? col.friend : s.side === 'civ' ? col.mute : s.state === 'det' ? col.accent : col.host; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); if (s.pos.f === 1) { ctx.strokeStyle = fc; ctx.lineWidth = 1.6; ctx.stroke(); } else { ctx.fillStyle = fc; ctx.fill(); } // hollow: upstairs
       if (s.supp > 0.5) { ctx.strokeStyle = col.warn; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, r + 2.5, 0, 7); ctx.stroke(); }
     }
     ctx.lineWidth = 1; for (const f of W.fx) { const a = 1 - (W.t - f.t) / 3; if (a <= 0) continue; ctx.globalAlpha = a; ctx.strokeStyle = f.side === 'blue' ? col.friend : col.host; ctx.lineWidth = f.big ? 3 : 1; ctx.beginPath(); ctx.moveTo(X(f.ax), Y(f.ay)); ctx.lineTo(X(f.bx), Y(f.by)); ctx.stroke(); } ctx.globalAlpha = 1;
@@ -67,11 +67,11 @@
   function truthLayer(W) {
     vehicles(W); soldiers(W);
     for (const id in W.units) {
-      const u = W.units[id]; if (u.kind === 'hq' || u.kind === 'support') continue; const ok = F.unitOk(W, u).length; if (!ok && u.side === 'red') continue;
+      const u = W.units[id]; if (u.kind === 'hq' || u.kind === 'support' || u.side === 'civ') continue; const ok = F.unitOk(W, u).length; if (!ok && u.side === 'red') continue; if (W.map.cqb && u.side === 'red' && cam.s < 2) continue;
       const x = X(u.pos.x), y = Y(u.pos.y) - 16 - Math.min(18, cam.s * 30), c = u.side === 'blue' ? col.friend : col.host;
       if (u.side === 'blue' && UI.showLinks && !F.atFob(W, u.pos) && (u.plan || u.con)) { const l = F.link(W, u), f = W.map.nodes.fob; ctx.strokeStyle = l ? col.ok : col.host; ctx.lineWidth = 1; ctx.setLineDash(l === 'voice' ? [] : l === 'data' ? [2, 5] : [1, 8]); ctx.beginPath(); ctx.moveTo(X(u.pos.x), Y(u.pos.y)); ctx.lineTo(X(f.x), Y(f.y)); ctx.stroke(); ctx.setLineDash([]); }
       if (F.atFob(W, u.pos) && cam.s < 0.6 && u.side === 'blue') continue;
-      frame(x, y, u.side === 'blue' ? u.call : u.name.toUpperCase(), u.con ? col.host : c, false, `${ok} · ${u.con ? 'IN CONTACT' : (u.st || u.task)}`.slice(0, 44), UI.sel === id);
+      frame(x, y, u.side === 'blue' ? u.call : u.name.toUpperCase(), u.con ? col.host : c, false, W.map.cqb ? (cam.s < 3 ? `${ok} · ${u.con ? 'IN CONTACT' : u.phase || u.st || ''}`.slice(0, 40) : null) : `${ok} · ${u.con ? 'IN CONTACT' : (u.st || u.task)}`.slice(0, 44), UI.sel === id);
     }
   }
   function knownLayer(W) {

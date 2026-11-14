@@ -42,13 +42,16 @@
   /* ---------- command panels ---------- */
   function menu() {
     let h = '<h2>Choose an operation</h2><p class="mute sm">Each operation runs on the same simulation: individual soldiers, line of sight, radio range, real ammunition. You write the plan and run it from the command post; the element leaders carry it out as they understand it.</p>';
-    for (const id in F.SCENARIOS) { const s = F.SCENARIOS[id]; h += `<div class="card acc"><div class="hd"><b>${esc(s.name)}</b><span class="tag">${esc(s.scale)}</span></div><p>${esc(s.brief)}</p><div class="kv">Planning begins ${F.clock(s.start)}. Suggested H-hour ${F.clock(s.h)}.</div><div class="row"><button class="btn pri" data-a="start:${id}">Plan this operation</button></div></div>`; }
+    for (const id of Object.keys(F.SCENARIOS).sort((a, b) => (F.SCENARIOS[b].kind === 'compound') - (F.SCENARIOS[a].kind === 'compound'))) { const s = F.SCENARIOS[id]; h += `<div class="card acc"><div class="hd"><b>${esc(s.name)}</b><span class="tag">${esc(s.scale)}</span></div><p>${esc(s.brief)}</p><div class="kv">Planning begins ${F.clock(s.start)}.${s.kind === 'compound' ? ' The plan starts empty: you decide how the force gets in, then each team\'s way in and rooms, the perimeter and the timing.' : ' Suggested H-hour ' + F.clock(s.h) + '.'}</div><div class="row"><button class="btn pri" data-a="start:${id}">Plan this operation</button></div></div>`; }
     h += '<p class="mute sm">The living base from the earlier slice is still in <a href="index.html">index.html</a>.</p>';
     return h;
   }
   function plan() {
     if (!W) return menu();
     const O = W.op, P = O.plan; let h = msg();
+    if (O.kind === 'compound' && O.status === 'planning') return UI.cq.plan(W, h);
+    if (O.kind === 'compound' && O.status === 'running') return h + UI.cq.running(W, logLine);
+    if (O.kind === 'compound') return h + `<div class="card ${O.outcome.success ? 'blue' : 'crit'}"><div class="hd"><b>${esc(O.name)}</b><span class="tag">complete</span></div><p>All elements are back. The debrief is in the Review tab.</p><div class="row"><button class="btn pri" data-a="tab:review">Open the review</button><button class="btn" data-a="start:${O.id}">Plan it again</button></div></div>`;
     if (O.status === 'planning') {
       const sc = F.SCENARIOS[O.id];
       h += `<div class="card acc"><div class="hd"><b>${esc(O.name)}</b><span class="tag">planning</span></div><p>${esc(sc.brief)}</p><p class="mute sm">Drag the square waypoints on the map to change routes and positions. The clock is stopped while you plan.</p></div>`;
@@ -89,9 +92,9 @@
     if (!W) return menu(); const O = W.op;
     if (O.status !== 'complete') return '<p class="mute">The review opens when the operation is over and every element is back.</p>';
     const R = O.outcome, believed = { captured: 'detained', killed: 'killed', absent: 'not on the objective', unknown: 'no report' }[R.believed];
-    let h = `<div class="card ${R.success ? 'blue' : 'crit'}"><div class="hd"><b>${R.success ? 'Mission accomplished' : 'Mission failed'}</b><span class="tag">${F.dur(O.tEnd - O.tLaunch)}</span></div><div class="kv">Target: <b>${esc(R.hvt)}</b>. The command post believed: <b>${believed}</b>.<br>Friendly: <b>${R.blue.kia} killed, ${R.blue.wia} wounded</b>. Enemy: <b>${R.red.kia} killed, ${R.red.wia} wounded</b>, ${R.red.ok} unhurt.<br>${R.alerted ? `The enemy was first alerted ${F.clock(R.alerted.t).slice(3)}: ${esc(R.alerted.text)}.` : 'The enemy was never alerted.'}</div><div class="row"><button class="btn pri" data-a="start:${O.id}">Plan it again</button><button class="btn" data-a="menu">Other operations</button></div></div>`;
+    let h = O.kind === 'compound' ? UI.cq.reviewHead(W) : `<div class="card ${R.success ? 'blue' : 'crit'}"><div class="hd"><b>${R.success ? 'Mission accomplished' : 'Mission failed'}</b><span class="tag">${F.dur(O.tEnd - O.tLaunch)}</span></div><div class="kv">Target: <b>${esc(R.hvt)}</b>. The command post believed: <b>${believed}</b>.<br>Friendly: <b>${R.blue.kia} killed, ${R.blue.wia} wounded</b>. Enemy: <b>${R.red.kia} killed, ${R.red.wia} wounded</b>, ${R.red.ok} unhurt.<br>${R.alerted ? `The enemy was first alerted ${F.clock(R.alerted.t).slice(3)}: ${esc(R.alerted.text)}.` : 'The enemy was never alerted.'}</div><div class="row"><button class="btn pri" data-a="start:${O.id}">Plan it again</button><button class="btn" data-a="menu">Other operations</button></div></div>`;
     h += '<h2>What happened, and when you heard</h2><p class="mute sm">Ground truth on the left. On the right, the first report the command post logged after it.</p>';
-    const key = ['op-launch', 'enemy-alert', 'contact', 'casualty', 'capture', 'identify', 'enemy-withdraw', 'break', 'contact-end', 'mission-end', 'op-end'];
+    const key = ['op-launch', 'enemy-alert', 'enemy-armed', 'breach', 'hard-landing', 'detain', 'deny', 'contact', 'casualty', 'capture', 'identify', 'enemy-withdraw', 'break', 'contact-end', 'mission-end', 'op-end'];
     h += '<div class="tw"><table><thead><tr><th>Time</th><th>Truth</th><th>Command post</th></tr></thead><tbody>';
     W.events.filter(e => key.includes(e.type)).forEach(e => { const l = W.hq.log.find(x => x.t >= e.t && x.t0 >= e.t - 2); h += `<tr><td>${F.clockS(e.t).slice(3)}</td><td>${esc(e.text)}</td><td>${l ? `${F.clock(l.t).slice(3)} ${esc(l.from)}: ${esc(l.text)}` : '<span class="mute">nothing</span>'}</td></tr>`; });
     h += '</tbody></table></div><h2>Decisions</h2>' + W.decisions.slice(-80).map(d => `<div class="ln"><span class="tm">${F.clock(d.t).slice(3)}</span><span><span class="fr">${esc(d.actor)}</span> ${esc(d.text)}<span class="why">${esc(d.why)}</span></span></div>`).join('');
@@ -101,7 +104,7 @@
   /* ---------- observer panels ---------- */
   function world() {
     if (!W) return menu(); let h = '<p class="mute sm">Everything here is ground truth. The command post does not have it.</p>';
-    for (const id in W.units) { const u = W.units[id]; if (u.kind === 'hq') continue; const ok = F.unitOk(W, u).length, blue = u.side === 'blue', l = blue ? F.link(W, u) : null, st = blue && u.plan && u.plan[u.pi];
+    for (const id in W.units) { const u = W.units[id]; if (u.kind === 'hq' || u.side === 'civ') continue; const ok = F.unitOk(W, u).length, blue = u.side === 'blue', l = blue ? F.link(W, u) : null, st = blue && u.plan && u.plan[u.pi];
       h += `<div class="card ${u.con ? 'crit' : blue ? 'blue' : 'red'}"><div class="hd"><b>${esc(blue ? u.call : u.name)}</b>${u.con ? '<span class="tag crit">in contact</span>' : ''}${blue ? `<span class="tag ${l ? 'ok' : 'crit'}">${l ? 'link: ' + l : 'no comms'}</span>` : `<span class="tag">${esc(u.st)}${u.alerted ? ', alerted' : ''}</span>`}</div><div class="kv">${F.grid(u.pos)} · <b>${ok}</b> of ${u.members.length} effective · ${blue ? 'ammunition ' + F.ammoPct(W, u) + '% · ' + esc(u.phase || u.task) + (st ? ' · step: ' + st.k : '') + (u.riding ? ' · riding with ' + W.units[u.riding].call : '') + (u.det && u.det.length ? ' · ' + u.det.length + ' detained' : '') : `${u.role} · tracking ${F.fresh(W, u, 90).length}`}</div><div class="row"><button class="btn sm" data-a="follow:${id}">Follow</button></div></div>`; }
     h += '<h2>Enemy reasoning</h2>' + (W.decisions.filter(d => W.units[Object.keys(W.units).find(k => W.units[k].name === d.actor)] && W.units[Object.keys(W.units).find(k => W.units[k].name === d.actor)].side === 'red').slice(-14).reverse().map(d => `<div class="ln"><span class="tm">${F.clock(d.t).slice(3)}</span><span><span class="fr">${esc(d.actor)}</span> ${esc(d.text)}<span class="why">${esc(d.why)}</span></span></div>`).join('') || '<p class="mute">Nothing yet.</p>');
     return h;
@@ -126,7 +129,7 @@
     const out = []; for (const id of elIds()) W.op.plan.els[id].forEach((L, li) => (L.pts || []).forEach((p, pi) => { const q = F.opPt(W, p); out.push({ id, li, pi, x: q.x, y: q.y, fixed: !!p.node, L, last: pi === L.pts.length - 1 }); })); return out;
   }
   UI.under = (Wd, truth) => {
-    if (!W) return; const ctx = UI.ctx(), X = UI.X, Y = UI.Y, c = UI.col, O = W.op, s = UI.scale(), planning = O.status === 'planning';
+    if (!W) return; if (W.op.kind === 'compound') return UI.cq.under(W, truth); const ctx = UI.ctx(), X = UI.X, Y = UI.Y, c = UI.col, O = W.op, s = UI.scale(), planning = O.status === 'planning';
     const ob = O.obj; if (s > 0.3) { ctx.strokeStyle = c.ink; ctx.lineWidth = Math.max(1.5, s * 1.2); ctx.strokeRect(X(ob.x - 22), Y(ob.y + 20), 44 * s, 40 * s); ctx.fillStyle = c.raise; ctx.globalAlpha = 0.6; ctx.fillRect(X(ob.x - 8), Y(ob.y + 10), 18 * s, 14 * s); ctx.globalAlpha = 1; } // the compound wall and the house
     ctx.strokeStyle = c.host; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(X(ob.x), Y(ob.y), Math.max(10, 60 * s), 0, 7); ctx.stroke(); ctx.setLineDash([]); UI.text(ob.name, X(ob.x), Y(ob.y) - Math.max(14, 60 * s) - 4, c.host, '700 13px "Saira Extra Condensed", "Arial Narrow", sans-serif', 'center');
     const hide = W.map.nodes[O.plan.hide]; ctx.strokeStyle = c.friend; ctx.lineWidth = 1.5; ctx.strokeRect(X(hide.x) - 9, Y(hide.y) - 9, 18, 18); UI.text(planning ? 'VEHICLE DROP' : 'VEHICLES', X(hide.x) + 12, Y(hide.y) + 16, c.friend, '9px "B612 Mono", monospace');
@@ -142,13 +145,13 @@
     if (planning) for (const p of handles()) { if (p.fixed || p.L.exfil && p.L.pts.length === 1 && handles().some(q => q !== p && !q.L.exfil && q.id === p.id && q.x === p.x && q.y === p.y)) continue; const g = S.grab && S.grab.id === p.id && S.grab.li === p.li && S.grab.pi === p.pi; ctx.fillStyle = g ? c.accent : UI.col.map; ctx.strokeStyle = colOf(p.id); ctx.lineWidth = 2; const r = p.last ? 6 : 4.5; ctx.fillRect(X(p.x) - r, Y(p.y) - r, 2 * r, 2 * r); ctx.strokeRect(X(p.x) - r, Y(p.y) - r, 2 * r, 2 * r); }
   };
   UI.onGrab = (p, r) => {
-    if (!W || W.op.status !== 'planning' || S.mode !== 'command') return false; let best = null, bd = r * 1.4;
+    if (!W || W.op.status !== 'planning' || S.mode !== 'command' || W.op.kind === 'compound') return false; let best = null, bd = r * 1.4;
     for (const h of handles()) { if (h.fixed) continue; const d = F.dist(p, h); if (d < bd) { bd = d; best = h; } }
     if (!best) return false; S.grab = { id: best.id, li: best.li, pi: best.pi }; S.selEl = best.id; return true;
   };
   UI.onGrabMove = p => { if (S.grab) F.opEdit.move(W, S.grab.id, S.grab.li, S.grab.pi, { x: F.clamp(p.x, 0, W.map.w), y: F.clamp(p.y, 0, W.map.h) }); };
   UI.onGrabEnd = () => { S.grab = null; renderPanel(true); };
-  UI.onMapClick = (p, r) => { if (!W) return; let best = null, bd = r; for (const id in W.units) { const u = W.units[id]; if (u.kind === 'hq') continue; const q = S.mode === 'observer' ? u.pos : (W.hq.units[id] && W.hq.units[id].pos); if (!q) continue; const d = F.dist(p, q); if (d < bd) { bd = d; best = id; } } UI.sel = best; if (best && W.op.plan.els[best]) S.selEl = best; renderPanel(true); };
+  UI.onMapClick = (p, r) => { if (!W) return; if (W.op.kind === 'compound' && W.op.status === 'planning' && S.mode === 'command') { if (UI.cq.click(W, p, r)) { S.msg = null; renderPanel(true); } return; } let best = null, bd = r; for (const id in W.units) { const u = W.units[id]; if (u.kind === 'hq') continue; const q = S.mode === 'observer' ? u.pos : (W.hq.units[id] && W.hq.units[id].pos); if (!q) continue; const d = F.dist(p, q); if (d < bd) { bd = d; best = id; } } UI.sel = best; if (best && W.op.plan.els[best]) S.selEl = best; renderPanel(true); };
 
   /* ---------- shell ---------- */
   function renderTop() {
@@ -163,11 +166,12 @@
   function renderPanel(force) { const ae = document.activeElement; if (!force && ae && (ae.tagName === 'SELECT' || ae.tagName === 'INPUT')) return; const p = $('panel'), sc = p.scrollTop; p.innerHTML = W || S.mode === 'command' ? PAN[S.tab[S.mode]]() : menu(); p.scrollTop = sc; }
   function res(r, ok) { S.msg = r.ok ? { ok: true, text: ok } : { text: r.err || 'That did not work.' }; }
   function fitPlan() { // frame every planned point, the vehicle drop and the objective
+    if (W.op.kind === 'compound') return UI.cq.fit(W);
     const ps = handles().concat([W.op.obj, W.map.nodes[W.op.plan.hide]]), r = $('map').getBoundingClientRect(); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; ps.forEach(p => { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); });
     UI.look({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, Math.min(0.5, (r.width - 60) / (x1 - x0 + 300), (r.height - 90) / (y1 - y0 + 300)));
   }
   function begin(id) {
-    W = F.createOp((Date.now() % 2147483000) | 1, id); S.selEl = null; S.speed = 0; S.mode = 'command'; S.tab.command = 'plan';
+    W = F.createOp((Date.now() % 2147483000) | 1, id); if (UI.cq) UI.cq.reset(); S.selEl = null; S.speed = 0; S.mode = 'command'; S.tab.command = 'plan';
     fitPlan(); S.msg = { ok: true, text: 'Planning. The clock is stopped until you approve the plan.' };
   }
   function act(a, p, q, r) {
@@ -185,15 +189,17 @@
       case 'addpt': { const L = W.op.plan.els[p][+q]; F.opEdit.add(W, p, +q, L.pts.length - 1 - (L.pts[L.pts.length - 1].node ? 0 : 0)); S.selEl = p; break; }
       case 'rmpt': { const L = W.op.plan.els[p][+q]; const i = L.pts.length - 1; F.opEdit.remove(W, p, +q, L.pts[i].node ? i - 1 : i); break; }
       case 'follow': { UI.sel = p; UI.cam.follow = p; if (UI.cam.s < 0.25) UI.cam.s = 0.6; break; }
-      case 'jump': { UI.cam.follow = null; if (!W) break; if (p === 'ao') UI.look({ x: 6500, y: 4800 }, Math.min(0.08, $('map').getBoundingClientRect().width / 12500)); else if (p === 'obj') UI.look(W.op.obj, 0.9); else if (p === 'fob') UI.look(W.map.nodes.fob, 2.6); break; }
+      case 'jump': { UI.cam.follow = null; if (!W) break; if (p === 'ao') UI.look({ x: W.map.w / 2, y: W.map.h / 2 }, Math.min(0.08, $('map').getBoundingClientRect().width / (W.map.w + 500))); else if (p === 'obj') UI.look(W.op.obj, W.op.kind === 'compound' ? 7 : 0.9); else if (p === 'fob') UI.look(W.map.nodes.fob, 2.6); break; }
       case 'zoom': UI.zoomBy(+p); break;
       case 'evf': S.evFilter = p; break;
+      case 'cq': UI.cq.act(W, p, q, r); break;
     }
     renderTop(); renderPanel(true);
   }
   function chg(k, v, el) {
     const a = k.split(':');
-    if (a[0] === 'sp') F.opEdit.times(W, +v, null); else if (a[0] === 'h') F.opEdit.times(W, null, +v); else if (a[0] === 'hide') F.opEdit.hide(W, v);
+    if (a[0] === 'cqsp') UI.cq.change(W, 'cqsp', v);
+    else if (a[0] === 'sp') F.opEdit.times(W, +v, null); else if (a[0] === 'h') F.opEdit.times(W, null, +v); else if (a[0] === 'hide') F.opEdit.hide(W, v);
     else if (a[0] === 'pace') F.opEdit.pace(W, a[1], +a[2], v); else if (a[0] === 'clock') F.opEdit.clock(W, a[1], +a[2], a[3], el.checked);
     renderPanel(true);
   }

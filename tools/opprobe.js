@@ -1,7 +1,8 @@
-// Run an operation scenario headless with the default plan: node tools/opprobe.js <scenario> <seed> [events]
+// Run an operation scenario headless with the default (or, for the compound raid, a sample) plan:
+// node tools/opprobe.js <scenario> <seed> [events] [yard|out|off]
 const F = require('../src/sim/index.js');
 const id = process.argv[2] || 'cobalt', seed = +process.argv[3] || 7, show = +process.argv[4] || 0;
-const W = F.createOp(seed, id); const r = F.opCmd.launch(W); if (!r.ok) { console.log(r.err); process.exit(1); }
+const W = F.createOp(seed, id); if (W.op.kind === 'compound') F.cqbSamplePlan(W, process.argv[5]); const r = F.opCmd.launch(W); if (!r.ok) { console.log(r.err); process.exit(1); }
 const t0 = Date.now(); while (W.op.status === 'running') F.step(W);
 console.log(id, 'seed', seed, 'ended', F.clock(W.t), 'in', Date.now() - t0, 'ms');
 console.log(JSON.stringify(W.op.outcome));

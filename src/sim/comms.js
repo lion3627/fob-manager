@@ -13,9 +13,9 @@
     const vpos = u.vehicles.length ? W.vehicles[u.vehicles[0]].pos : null;
     const withVeh = vpos && (!u.dis || F.dist(u.pos, vpos) < 150);
     const range = (withVeh ? 12000 : 6000) * pwr;
-    if (F.dist(u.pos, mast) <= range && !F.blocked(W, u.pos, mast)) return 'voice';
-    for (const id in W.units) { const r = W.units[id]; if (r === u || r.side !== 'blue' || r.kind === 'hq' || r.kind === 'support' || !F.unitOk(W, r).length) continue; if (F.atFob(W, r.pos)) continue; if (F.dist(u.pos, r.pos) <= 5000 && !F.blocked(W, u.pos, r.pos) && F.dist(r.pos, mast) <= 12000 * pwr && !F.blocked(W, r.pos, mast)) return 'voice'; }
-    if (vpos && (withVeh || (F.dist(u.pos, vpos) <= 3000 && !F.blocked(W, u.pos, vpos)))) return 'data';
+    if (F.dist(u.pos, mast) <= range && !F.blocked(W, u.pos, mast, true)) return 'voice';
+    for (const id in W.units) { const r = W.units[id]; if (r === u || r.side !== 'blue' || r.kind === 'hq' || r.kind === 'support' || !F.unitOk(W, r).length) continue; if (F.atFob(W, r.pos)) continue; if (F.dist(u.pos, r.pos) <= 5000 && !F.blocked(W, u.pos, r.pos, true) && F.dist(r.pos, mast) <= 12000 * pwr && !F.blocked(W, r.pos, mast, true)) return 'voice'; }
+    if (vpos && (withVeh || (F.dist(u.pos, vpos) <= 3000 && !F.blocked(W, u.pos, vpos, true)))) return 'data';
     if (u.tacsat && !u.moving && W.t - (u.stillSince == null ? W.t : u.stillSince) >= 60) return 'tacsat'; // manpack satellite radio: only once halted with the antenna up
     return null;
   };

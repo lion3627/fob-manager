@@ -32,10 +32,15 @@
       });
       if (m.stop && F.dist(u.pos, m.stop.p) < m.stop.r) u.mv = null;
       u.moving = true;
+    } else if (m.k === 'air') { // aircraft fly straight; each aircraft keeps its slot behind the lead
+      const dx = m.to.x - u.pos.x, dy = m.to.y - u.pos.y, d = Math.hypot(dx, dy), step = Math.min(m.spd, d); if (d > 0.01) u.hdg = Math.atan2(dy, dx);
+      if (m.spd >= d) { u.pos = { x: m.to.x, y: m.to.y }; u.mv = null; if (m.node) u.node = m.node; } else { u.pos.x += dx / d * m.spd; u.pos.y += dy / d * m.spd; }
+      u.vehicles.forEach((id, k) => { const v = W.vehicles[id]; if (v.status === 'down') return; F.burn(W, W.stores[v.tank], 'JP8', step / 1000 * v.lPerKm, 'flying'); v.km += step / 1000; v.pos = { x: u.pos.x - Math.cos(u.hdg) * 30 * k + Math.sin(u.hdg) * 20 * k, y: u.pos.y - Math.sin(u.hdg) * 30 * k - Math.cos(u.hdg) * 20 * k }; });
+      u.moving = true;
     } else {
       const dx = m.to.x - u.pos.x, dy = m.to.y - u.pos.y, d = Math.hypot(dx, dy);
       const carry = u.members.some(id => { const s = W.soldiers[id]; return s.state === 'wia' && !s.mobile && !s.evac; });
-      const bound = u.con && u.assaulting ? (Math.floor(W.t / 10) % 3 ? 1 : 0) : 1; // under fire an assault moves by bounds: rush, then get down and fire
+      const bound = u.con && u.assaulting && !u.cqb ? (Math.floor(W.t / 10) % 3 ? 1 : 0) : 1; // under fire an assault moves by bounds: rush, then get down and fire
       const step = m.spd * (F.coverAt(W, u.pos) > 0.3 ? 0.8 : 1) * (F.isNight(W.t) ? 0.85 : 1) * (carry ? 0.6 : 1) * bound;
       if (d > 0.01) u.hdg = Math.atan2(dy, dx);
       if (step >= d) { u.pos = { x: m.to.x, y: m.to.y }; u.mv = null; } else { u.pos.x += dx / d * step; u.pos.y += dy / d * step; }
@@ -46,16 +51,18 @@
   F.place = (W, u) => {
     const nv = u.vehicles.length, c = Math.cos(u.hdg - Math.PI / 2), sn = Math.sin(u.hdg - Math.PI / 2); let k = 0;
     const hold = u.con && u.con.phase === 'fight' && !u.con.settle && !u.assaulting;
+    if (u.file) { const T = u.trail = u.trail || [], h = T[0]; if (!h || F.dist(h, u.pos) > 12) T.length = 0; if (!T.length || F.dist(T[0], u.pos) >= 0.75) { T.unshift({ x: u.pos.x, y: u.pos.y }); if (T.length > 40) T.pop(); } } else u.trail = null; // in file, each man steps where the man in front stepped
     if (u.riding) { const cr = W.units[u.riding], cv = cr.vehicles.map(v => W.vehicles[v]); u.pos = { x: cr.pos.x, y: cr.pos.y }; u.members.forEach((id, i) => { const s = W.soldiers[id]; if (s.evac) return; const v = cv[i % cv.length]; s.pos.x = v.pos.x; s.pos.y = v.pos.y; s.inVeh = true; s.moving = !!cr.moving; }); placeDet(W, u); return; }
     u.members.forEach((id, i) => {
-      const s = W.soldiers[id]; if (s.evac || s.state === 'det') return; let tx, ty; s.sneak = u.pace === 'stealth';
+      const s = W.soldiers[id]; if (s.evac || s.state === 'det') return; let tx, ty; s.sneak = u.pace === 'stealth'; if (u.f != null && !s.inVeh && s.state === 'ok') s.pos.f = u.f;
+      if (u.spots && s.state === 'ok' && !(nv && (!u.dis || u.crew.indexOf(id) >= 0))) { const t = u.spots[k++ % u.spots.length]; const dx = t.x - s.pos.x, dy = t.y - s.pos.y, d = Math.hypot(dx, dy); if (d <= 2.2) { s.pos.x = t.x; s.pos.y = t.y; s.moving = false; } else { s.pos.x += dx / d * 2.2; s.pos.y += dy / d * 2.2; s.moving = true; } s.inVeh = false; return; } // clearing a room: each to a point of domination
       const crew = u.crew.indexOf(id);
       if (nv && (!u.dis || crew >= 0)) { const v = W.vehicles[u.vehicles[(crew >= 0 ? crew : i) % nv]]; tx = v.pos.x; ty = v.pos.y; s.pos.x = tx; s.pos.y = ty; s.inVeh = true; s.moving = !!u.moving && !u.dis; return; }
       s.inVeh = false;
       if (s.state !== 'ok' && !(u.moving)) { s.moving = false; return; }
       if (hold && s.state === 'ok') { s.moving = false; return; }
-      const o = SLOTS[k++ % SLOTS.length]; const wide = u.con ? 1.3 : 1;
-      tx = u.pos.x + (o[0] * c - o[1] * sn) * wide; ty = u.pos.y + (o[0] * sn + o[1] * c) * wide;
+      if (u.file && u.trail) { const p = u.trail[Math.min(u.trail.length - 1, 2 * k++)]; tx = p.x; ty = p.y; } else { const o = SLOTS[k++ % SLOTS.length]; const wide = u.file ? 1 : u.con ? 1.3 : 1; // inside a compound a team moves in file
+      tx = u.pos.x + (o[0] * c - o[1] * sn) * wide; ty = u.pos.y + (o[0] * sn + o[1] * c) * wide; }
       const dx = tx - s.pos.x, dy = ty - s.pos.y, d = Math.hypot(dx, dy), sp = 2.4;
       if (d <= sp) { s.pos.x = tx; s.pos.y = ty; s.moving = d > 0.4 || !!u.moving; } else { s.pos.x += dx / d * sp; s.pos.y += dy / d * sp; s.moving = true; }
     });
@@ -64,18 +71,18 @@
   };
   function placeDet(W, u) { // detainees go where their captors go
     if (!u.det) return; const v = u.riding ? W.vehicles[W.units[u.riding].vehicles[0]] : null;
-    u.det.forEach((id, i) => { const s = W.soldiers[id]; if (v) { s.pos.x = v.pos.x; s.pos.y = v.pos.y; s.inVeh = true; return; } s.inVeh = false; const tx = u.pos.x - Math.cos(u.hdg) * (6 + i * 3), ty = u.pos.y - Math.sin(u.hdg) * (6 + i * 3), dx = tx - s.pos.x, dy = ty - s.pos.y, d = Math.hypot(dx, dy); if (d <= 2.4) { s.pos.x = tx; s.pos.y = ty; } else { s.pos.x += dx / d * 2.4; s.pos.y += dy / d * 2.4; } s.moving = d > 0.4; });
+    u.det.forEach((id, i) => { const s = W.soldiers[id]; if (u.f != null) s.pos.f = u.f; if (v) { s.pos.x = v.pos.x; s.pos.y = v.pos.y; s.inVeh = true; return; } s.inVeh = false; const tx = u.pos.x - Math.cos(u.hdg) * (6 + i * 3), ty = u.pos.y - Math.sin(u.hdg) * (6 + i * 3), dx = tx - s.pos.x, dy = ty - s.pos.y, d = Math.hypot(dx, dy); if (d <= 2.4) { s.pos.x = tx; s.pos.y = ty; } else { s.pos.x += dx / d * 2.4; s.pos.y += dy / d * 2.4; } s.moving = d > 0.4; });
   }
 
   /* Observation. Each soldier's eyes, limited by range, darkness, concealment and terrain. */
   F.sense = W => {
     const night = F.isNight(W.t), units = Object.values(W.units);
     for (const U of units) {
-      if (U.kind === 'hq' || U.kind === 'support') continue;
+      if (U.kind === 'hq' || U.kind === 'support' || U.side === 'civ') continue;
       const eyes = U.members.map(id => W.soldiers[id]).filter(s => s.state === 'ok' && s.supp < 0.9 && !s.evac); if (!eyes.length) continue;
       const maxR = night ? (U.side === 'blue' ? 450 : 260) : 1300;
       for (const V of units) {
-        if (V.side === U.side) continue;
+        if (V.side === U.side || V.side === 'civ') continue;
         let near = F.dist(U.pos, V.pos); if (U.vehicles.length) near = Math.min(near, F.dist(W.vehicles[U.vehicles[0]].pos, V.pos)); if (V.vehicles.length) near = Math.min(near, F.dist(U.pos, W.vehicles[V.vehicles[0]].pos));
         if (near > maxR + 400) continue;
         let any = false;
@@ -84,10 +91,12 @@
           const firing = W.t - e.firedAt < 6; let conceal = F.coverAt(W, e.pos) * (e.moving ? 0.5 : 1); if ((V.side === 'red' || V.opEl) && !e.moving && !firing) conceal += 0.3; if (V.observing) conceal += 0.25;
           const vb = e.inVeh ? 3 : 1;
           for (const s of eyes) {
-            const r = F.dist(s.pos, e.pos); if (r > (e.inVeh && e.moving ? Math.max(maxR * 1.5, 900) : maxR)) continue; // moving vehicles are heard as well as seen if (F.blocked(W, s.pos, e.pos)) continue;
+            const r = F.dist(s.pos, e.pos); if (r > (e.inVeh && e.moving ? Math.max(maxR * 1.5, 900) : maxR)) continue; // moving vehicles are heard as well as seen
+            if (F.blocked(W, s.pos, e.pos)) continue;
             let p = F.clamp(1.15 - r / maxR, 0.03, 0.9) * 0.3 * (firing ? 5 : 1) * (e.moving ? (e.sneak ? 0.8 : 1.6) : 1) * (1 - Math.min(0.975, conceal)) * (U.observing ? 1.7 : 1) * (U.post && !U.alerted ? 0.15 : 1) * vb * (s.inVeh && s.moving && !firing ? 0.2 : 1);
             if (tr && W.t - tr.t < 30) p = Math.max(p, 0.5);
-            if (F.ch(W, Math.min(0.97, p))) { U.kb.con[e.id] = { x: e.pos.x, y: e.pos.y, t: W.t, down: e.state !== 'ok', unit: V.id }; any = true; break; }
+            if (U.cqb && r < 12) p = Math.max(p, 0.9); // a team clearing a room scans every corner of it, under night vision
+            if (F.ch(W, Math.min(0.97, p))) { U.kb.con[e.id] = { x: e.pos.x, y: e.pos.y, f: e.pos.f || 0, t: W.t, down: e.state !== 'ok', unit: V.id }; any = true; break; }
           }
         }
         if (any) {
@@ -102,7 +111,7 @@
 
   function wound(W, e, s, U, V) {
     const r = F.rnd(W); e.state = r < 0.3 ? 'kia' : 'wia'; e.mobile = e.state === 'wia' && r > 0.7; e.downAt = W.t;
-    W.stats = W.stats || { blueKia: 0, blueWia: 0, redKia: 0, redWia: 0 }; W.stats[(e.side === 'blue' ? 'blue' : 'red') + (e.state === 'kia' ? 'Kia' : 'Wia')]++;
+    W.stats = W.stats || { blueKia: 0, blueWia: 0, redKia: 0, redWia: 0 }; const sk = (e.side === 'blue' ? 'blue' : e.side === 'civ' ? 'civ' : 'red') + (e.state === 'kia' ? 'Kia' : 'Wia'); W.stats[sk] = (W.stats[sk] || 0) + 1;
     const id = F.ev(W, 'casualty', `${V.name}: ${e.role} ${e.state === 'kia' ? 'killed' : 'wounded' + (e.mobile ? ' (walking)' : ' (litter)')} by ${F.WEAPONS[s.gun && s.inVeh ? 'M240' : s.weapon] ? (s.gun && s.inVeh ? 'M240' : s.weapon) : 'small arms'} fire from ${U.name} at ${Math.round(F.dist(s.pos, e.pos))} m`, { soldier: e.id, by: s.id }, U.con ? U.con.ev : null);
     V.lastCasEv = id;
   }
@@ -116,7 +125,7 @@
       const tracks = F.fresh(W, U, 150); if (!tracks.length) continue;
       const surprise = U.side === 'red' && W.t - U.con.t0 < 20 ? 2.5 : 1; // the opening burst of an ambush lands on people who are not yet behind cover
       for (const sid of U.members) {
-        const s = W.soldiers[sid]; if (s.state !== 'ok' || s.evac) continue;
+        const s = W.soldiers[sid]; if (s.state !== 'ok' || s.evac || s.armed === false) continue;
         const gunner = s.gun && s.inVeh; if (s.inVeh && !gunner) continue;
         const wk = gunner ? 'M240' : s.weapon, w = F.WEAPONS[wk];
         if (w.at) { // anti-vehicle rocket: only worth firing at a vehicle
@@ -128,9 +137,10 @@
           continue;
         }
         let best = null, bd = 1e9, aimed = false;
-        for (const tr of tracks) { const r = F.dist(s.pos, tr); if (r > w.range) continue; const a = W.t - tr.t <= 45; if ((a && !aimed) || (a === aimed && r < bd)) { if (F.blocked(W, s.pos, tr)) continue; best = tr; bd = r; aimed = a; } }
+        for (const tr of tracks) { const r = F.dist(s.pos, tr); if (r > w.range) continue; if (U.side === 'blue' && W.soldiers[tr.id].armed === false) continue; /* positive identification: no shooting at the unarmed */ const a = W.t - tr.t <= 45; if ((a && !aimed) || (a === aimed && r < bd)) { if (F.blocked(W, s.pos, tr)) continue; best = tr; bd = r; aimed = a; } }
         if (!best) continue;
-        s.fa += w.rof * (1 - 0.6 * s.supp) * (aimed ? 1 : 0.35); let n = Math.floor(s.fa); s.fa -= n; if (n <= 0) continue;
+        const cqb = bd < 20 && aimed ? 4 : 1; // close quarters: aimed pairs at a few metres
+        s.fa += w.rof * cqb * (1 - 0.6 * s.supp) * (aimed ? 1 : 0.35); let n = Math.floor(s.fa); s.fa -= n; if (n <= 0) continue;
         if (gunner) n = F.burn(W, W.stores[W.vehicles[s.gun].ammo], 'A762L', n, 'combat'); else n = F.expend(W, s, w.ammo, n, 'combat');
         if (n <= 0) { s.dry = true; continue; }
         s.firedAt = W.t; any = true;
@@ -138,11 +148,12 @@
         const cov = Math.min(0.8, F.coverAt(W, e.pos) + (e.moving ? 0 : 0.3) + (e.inVeh ? 0.45 : 0));
         for (let k = 0; k < n; k++) {
           e.supp = Math.min(1, e.supp + (md < 25 ? 0.028 : 0.008)); e.hitAt = W.t;
-          const p = 0.02 * w.acc * Math.exp(-bd / 260) * (1 - 0.55 * s.supp) * (1 - cov) * (aimed && md < 8 ? 1 : 0.12) * (night ? (U.side === 'blue' ? 0.85 : 0.5) : 1) * surprise; // night vision devices: friendly forces lose little at night, the enemy a lot
+          const p = 0.02 * w.acc * Math.exp(-bd / 260) * (1 - 0.55 * s.supp) * (1 - cov) * (aimed && md < 8 ? 1 : 0.12) * (night ? (U.side === 'blue' ? 0.85 : 0.5) : 1) * surprise * (cqb > 1 ? (U.side === 'blue' ? 6 : 2.5) : 1); /* at a few metres: trained shooters with night vision, against men woken in the dark */ // night vision devices: friendly forces lose little at night, the enemy a lot
           if (e.state === 'ok' && F.ch(W, p)) wound(W, e, s, U, V);
+          else if (cqb > 1 && W.civ) { const c = W.civ.find(id => { const x = W.soldiers[id]; return x.state === 'ok' && (x.pos.f || 0) === (e.pos.f || 0) && F.dist(x.pos, e.pos) < 1.5; }); if (c && F.ch(W, 0.02)) { const cv = W.soldiers[c]; wound(W, cv, s, U, W.units[cv.unit]); } } // a miss in a crowded room can hit someone else
         }
         const o = W.soldiers[F.pick(W, V.members)]; if (o && o !== e && F.dist(o.pos, e.pos) < 20) o.supp = Math.min(1, o.supp + 0.02 * n);
-        if (F.ch(W, 0.12)) V.kb.con[s.id] = { x: s.pos.x + F.ri(W, -25, 25), y: s.pos.y + F.ri(W, -25, 25), t: W.t, down: false, unit: U.id }; // muzzle flash and sound
+        if (F.ch(W, 0.12)) V.kb.con[s.id] = { x: s.pos.x + F.ri(W, -25, 25) * (s.pos.f != null ? 0.1 : 1), y: s.pos.y + F.ri(W, -25, 25) * (s.pos.f != null ? 0.1 : 1), f: s.pos.f || 0, t: W.t, down: false, unit: U.id }; // muzzle flash and sound
         if (W.fx.length < 240) W.fx.push({ ax: s.pos.x, ay: s.pos.y, bx: best.x + F.ri(W, -6, 6), by: best.y + F.ri(W, -6, 6), t: W.t, side: U.side });
       }
       if (any) { U.con.lastFire = W.t; if (W.t % 3 === 0) (W.noise = W.noise || []).push({ x: Math.round(U.pos.x), y: Math.round(U.pos.y), t: W.t, side: U.side, u: U.id }); }

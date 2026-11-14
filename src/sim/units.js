@@ -4,11 +4,11 @@
 (function () {
   const F = globalThis.FOB;
   const next = u => { u.pi++; };
-  const drives = u => u.kind === 'convoy' || u.kind === 'mounted'; // vehicle elements drive through, they do not stop to fight
+  const drives = u => u.kind === 'convoy' || u.kind === 'mounted' || u.kind === 'air'; // vehicle elements drive through, they do not stop to fight
   const fobPos = (W, k) => ({ x: W.map.nodes.fob.x + F.FOBLAY[k].x, y: W.map.nodes.fob.y + F.FOBLAY[k].y });
   F.fobPos = fobPos;
   F.ammoPct = (W, u) => F.selfRep(W, u).ammo;
-  function enemyEst(W, u) { const fr = F.fresh(W, u, 150); if (!fr.length) return { pos: { x: Math.round(u.pos.x), y: Math.round(u.pos.y) }, size: [1, 6], act: 'firing from unknown position', n: 0 }; const c = { x: 0, y: 0 }; fr.forEach(t => { c.x += t.x / fr.length; c.y += t.y / fr.length; }); return { pos: { x: Math.round(c.x + F.ri(W, -80, 80)), y: Math.round(c.y + F.ri(W, -80, 80)) }, size: [fr.length, fr.length + 2], act: fr.some(t => W.t - W.soldiers[t.id].firedAt < 30) ? 'engaging with small arms' : 'armed, moving', n: fr.length }; }
+  function enemyEst(W, u) { const fr = F.fresh(W, u, 150); if (!fr.length) return { pos: { x: Math.round(u.pos.x), y: Math.round(u.pos.y) }, size: [1, 6], act: 'firing from unknown position', n: 0 }; const c = { x: 0, y: 0 }; fr.forEach(t => { c.x += t.x / fr.length; c.y += t.y / fr.length; }); const j = W.map.cqb && F.dist(c, u.pos) < 60 ? 3 : 80; return { pos: { x: Math.round(c.x + F.ri(W, -j, j)), y: Math.round(c.y + F.ri(W, -j, j)) }, size: [fr.length, fr.length + 2], act: fr.some(t => W.t - W.soldiers[t.id].firedAt < 30) ? 'engaging with small arms' : 'armed, moving', n: fr.length }; }
   F.enemyEst = enemyEst;
 
   /* ---------- plans ---------- */
@@ -100,11 +100,11 @@
     if (drives(u)) return;
     if (was === 'break') return;
     if (!u.opEl && (r.cas > 0 || r.ammo < 50)) F.abort(W, u, r.cas ? 'casualties' : 'ammunition');
-    else if (u.plan) { u.hold = null; const st = u.plan[u.pi]; if (st && st.k === 'drive') { st.go = 0; if (u.vehicles.length) u.plan.splice(u.pi, 0, { k: 'mount' }); } else if (st && (st.k === 'walk' || st.k === 'assault')) st.go = 0; }
+    else if (u.plan) { u.hold = null; const st = u.plan[u.pi]; if (st && st.k === 'drive') { st.go = 0; if (u.vehicles.length) u.plan.splice(u.pi, 0, { k: 'mount' }); } else if (st && (st.k === 'walk' || st.k === 'assault' || st.k === 'cwalk')) st.go = 0; }
   }
   function think(W, u) {
     const under = u.members.some(id => W.t - W.soldiers[id].hitAt < 8);
-    const fr = F.fresh(W, u, 90); let near = 1e9; for (const t of fr) near = Math.min(near, F.dist(u.pos, t));
+    const fr = F.fresh(W, u, 90).filter(t => W.soldiers[t.id].armed !== false); let near = 1e9; for (const t of fr) near = Math.min(near, F.dist(u.pos, t)); // an unarmed person is not a threat to fight
     if (!u.con) {
       if (under) startContact(W, u, 'ambushed');
       else if (fr.length && near <= (u.engR || 350) && (u.fire ? u.fire === 'free' : W.so.roe === 'engage') && !drives(u)) startContact(W, u, 'engaging armed enemy');
@@ -149,7 +149,7 @@
       if (!F.unitOk(W, u).length) continue;
       const away = !F.atFob(W, u.pos) && !(u.kind === 'convoy' && u.node === 'depot' && !u.mv);
       if (!u.riding && (away || u.con || u.newCon || u.members.some(sid => W.t - W.soldiers[sid].hitAt < 8))) think(W, u);
-      const st = u.plan && u.plan[u.pi], under = !!st && ['assault', 'sse', 'await', 'sbf', 'block', 'say', 'fire', 'phase'].includes(st.k); // an assault fights its way forward; leaders keep reading the plan while in contact
+      const st = u.plan && u.plan[u.pi], under = !!st && ['assault', 'sse', 'await', 'sbf', 'block', 'say', 'fire', 'phase', 'door', 'breach', 'clear', 'cwalk', 'search', 'exfil', 'deny', 'landed'].includes(st.k); // an assault fights its way forward; leaders keep reading the plan while in contact
       if (u.plan && (!u.con || u.con.phase === 'break' || drives(u) || under)) runStep(W, u);
       if (u.mv && (!u.con || u.con.phase === 'break' || drives(u) || under)) F.stepMove(W, u); else u.moving = false;
       if (u.moving || u.stillSince == null) u.stillSince = W.t;
