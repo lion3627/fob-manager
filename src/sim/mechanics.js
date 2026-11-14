@@ -77,7 +77,8 @@
           const firing = W.t - e.firedAt < 6; let conceal = F.coverAt(W, e.pos) * (e.moving ? 0.5 : 1); if (V.side === 'red' && !e.moving && !firing) conceal += 0.3; if (V.observing) conceal += 0.25;
           const vb = e.inVeh ? 3 : 1;
           for (const s of eyes) {
-            const r = F.dist(s.pos, e.pos); if (r > (e.inVeh && e.moving ? Math.max(maxR * 1.5, 900) : maxR)) continue; // moving vehicles are heard as well as seen if (F.blocked(W, s.pos, e.pos)) continue;
+            const r = F.dist(s.pos, e.pos); if (r > (e.inVeh && e.moving ? Math.max(maxR * 1.5, 900) : maxR)) continue; // moving vehicles are heard as well as seen
+            if (F.blocked(W, s.pos, e.pos)) continue;
             let p = F.clamp(1.15 - r / maxR, 0.03, 0.9) * 0.3 * (firing ? 5 : 1) * (e.moving ? 1.6 : 1) * (1 - Math.min(0.975, conceal)) * (U.observing ? 1.7 : 1) * vb * (s.inVeh && s.moving && !firing ? 0.2 : 1);
             if (tr && W.t - tr.t < 30) p = Math.max(p, 0.5);
             if (F.ch(W, Math.min(0.97, p))) { U.kb.con[e.id] = { x: e.pos.x, y: e.pos.y, t: W.t, down: e.state !== 'ok', unit: V.id }; any = true; break; }

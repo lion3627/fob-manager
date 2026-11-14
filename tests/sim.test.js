@@ -110,3 +110,17 @@ test('the commander cannot change standing orders that are not yet theirs, and a
   F.run(W, 4 * H); assert.ok(['active', 'done', 'aborted'].includes(W.ops[0].status), 'status ' + W.ops[0].status);
   assert.strictEqual(W.player.resp.support, 'held'); assert.strictEqual(F.cmd.setSO(W, 'qrfNTM', 300).ok, true); assert.strictEqual(W.so.qrfNTM, 300);
 });
+
+test('soldiers cannot see an enemy on the far side of the ridge, but see one at the same range in the open', () => {
+  const place = (W, id, p) => { const u = W.units[id]; u.pos = { ...p }; u.plan = [{ k: 'halt', dur: 1e9 }]; u.pi = 0; u.task = 'test'; u.vehicles = []; u.dis = true; u.members.forEach(m => { const s = W.soldiers[m]; s.pos = { ...p }; s.inVeh = false; s.moving = true; }); return u; };
+  const seen = (W, u, e) => e.members.filter(m => u.kb.con[m]).length;
+  // Arrange: 1,200 m apart, either side of Hill 402 (centre 13800,8900, radius 1400)
+  const A = F.create(9), ua = place(A, 'u2', { x: 12550, y: 8300 }), ea = place(A, 'e1', { x: 12550, y: 9500 });
+  const B = F.create(9), ub = place(B, 'u2', { x: 10000, y: 8300 }), eb = place(B, 'e1', { x: 10000, y: 9500 });
+  assert.ok(F.blocked(A, ua.pos, ea.pos) && !F.blocked(B, ub.pos, eb.pos));
+  // Act
+  for (let i = 0; i < 300; i++) { F.sense(A); F.sense(B); }
+  // Assert
+  assert.strictEqual(seen(A, ua, ea), 0, 'the ridge blocks sight');
+  assert.ok(seen(B, ub, eb) > 0, 'the same range in the open is visible');
+});
