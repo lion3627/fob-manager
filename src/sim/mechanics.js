@@ -95,6 +95,7 @@
             if (F.blocked(W, s.pos, e.pos)) continue;
             let p = F.clamp(1.15 - r / maxR, 0.03, 0.9) * 0.3 * (firing ? 5 : 1) * (e.moving ? (e.sneak ? 0.8 : 1.6) : 1) * (1 - Math.min(0.975, conceal)) * (U.observing ? 1.7 : 1) * (U.post && !U.alerted ? 0.15 : 1) * vb * (s.inVeh && s.moving && !firing ? 0.2 : 1);
             if (tr && W.t - tr.t < 30) p = Math.max(p, 0.5);
+            if (U.cqb && r < 12) p = Math.max(p, 0.9); // a team clearing a room scans every corner of it, under night vision
             if (F.ch(W, Math.min(0.97, p))) { U.kb.con[e.id] = { x: e.pos.x, y: e.pos.y, f: e.pos.f || 0, t: W.t, down: e.state !== 'ok', unit: V.id }; any = true; break; }
           }
         }
@@ -147,9 +148,9 @@
         const cov = Math.min(0.8, F.coverAt(W, e.pos) + (e.moving ? 0 : 0.3) + (e.inVeh ? 0.45 : 0));
         for (let k = 0; k < n; k++) {
           e.supp = Math.min(1, e.supp + (md < 25 ? 0.028 : 0.008)); e.hitAt = W.t;
-          const p = 0.02 * w.acc * Math.exp(-bd / 260) * (1 - 0.55 * s.supp) * (1 - cov) * (aimed && md < 8 ? 1 : 0.12) * (night ? (U.side === 'blue' ? 0.85 : 0.5) : 1) * surprise * (cqb > 1 ? 6 : 1); // night vision devices: friendly forces lose little at night, the enemy a lot
+          const p = 0.02 * w.acc * Math.exp(-bd / 260) * (1 - 0.55 * s.supp) * (1 - cov) * (aimed && md < 8 ? 1 : 0.12) * (night ? (U.side === 'blue' ? 0.85 : 0.5) : 1) * surprise * (cqb > 1 ? (U.side === 'blue' ? 6 : 2.5) : 1); /* at a few metres: trained shooters with night vision, against men woken in the dark */ // night vision devices: friendly forces lose little at night, the enemy a lot
           if (e.state === 'ok' && F.ch(W, p)) wound(W, e, s, U, V);
-          else if (cqb > 1 && W.civ) { const c = W.civ.find(id => { const x = W.soldiers[id]; return x.state === 'ok' && (x.pos.f || 0) === (e.pos.f || 0) && F.dist(x.pos, e.pos) < 2; }); if (c && F.ch(W, 0.04)) { const cv = W.soldiers[c]; wound(W, cv, s, U, W.units[cv.unit]); } } // a miss in a crowded room can hit someone else
+          else if (cqb > 1 && W.civ) { const c = W.civ.find(id => { const x = W.soldiers[id]; return x.state === 'ok' && (x.pos.f || 0) === (e.pos.f || 0) && F.dist(x.pos, e.pos) < 1.5; }); if (c && F.ch(W, 0.02)) { const cv = W.soldiers[c]; wound(W, cv, s, U, W.units[cv.unit]); } } // a miss in a crowded room can hit someone else
         }
         const o = W.soldiers[F.pick(W, V.members)]; if (o && o !== e && F.dist(o.pos, e.pos) < 20) o.supp = Math.min(1, o.supp + 0.02 * n);
         if (F.ch(W, 0.12)) V.kb.con[s.id] = { x: s.pos.x + F.ri(W, -25, 25) * (s.pos.f != null ? 0.1 : 1), y: s.pos.y + F.ri(W, -25, 25) * (s.pos.f != null ? 0.1 : 1), f: s.pos.f || 0, t: W.t, down: false, unit: U.id }; // muzzle flash and sound

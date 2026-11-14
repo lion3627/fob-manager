@@ -208,7 +208,7 @@
       for (const id in O.plan.els) { const u = W.units[id]; F.setPlan(W, u, compile(W, id), 'preparing for ' + O.name); u.codes = {}; }
       O.status = 'running'; O.tLaunch = W.t;
       F.trace(W, 'CDR', `Approved the plan for ${O.name}`, O.kind === 'compound' ? `Wheels up ${F.clock(O.plan.sp)}, ${F.INSERTS[O.plan.insert].name.toLowerCase()}` : `Start point ${F.clock(O.plan.sp)}, H-hour ${F.clock(O.h)}, vehicles to ${W.map.nodes[O.plan.hide].name}`);
-      F.ev(W, 'op-launch', `${O.name} approved. Start point ${F.clock(O.plan.sp)}, H-hour ${F.clock(O.h)}.`); return { ok: true };
+      F.ev(W, 'op-launch', O.kind === 'compound' ? `${O.name} approved. Wheels up ${F.clock(O.plan.sp)}.` : `${O.name} approved. Start point ${F.clock(O.plan.sp)}, H-hour ${F.clock(O.h)}.`); return { ok: true };
     },
     code: (W, code) => {
       const O = W.op; if (O.status !== 'running') return { ok: false, err: 'The operation is not running.' };
@@ -313,7 +313,7 @@
         if (met(W, u, s.until, s)) { u.fire = 'hold'; u.cease = true; u.holdPos = false; u.observing = false; u.engR = null; next(); }
         break;
       }
-      case 'block': if (!s.set) { s.set = 1; u.holdPos = true; u.fire = 'free'; u.engR = 400; u.observing = true; } u.phase = 'blocking'; sweep(W, u, s); if (met(W, u, s.until, s)) { sweep(W, u, s, true); u.holdPos = false; u.observing = false; u.engR = null; u.fire = 'hold'; next(); } break;
+      case 'block': if (!s.set) { s.set = 1; u.holdPos = true; u.fire = 'free'; u.engR = W.op.kind === 'compound' ? 150 : 400; u.observing = true; } u.phase = 'blocking'; if (W.op.kind !== 'compound') sweep(W, u, s); if (met(W, u, s.until, s)) { if (W.op.kind !== 'compound') sweep(W, u, s, true); u.holdPos = false; u.observing = false; u.engR = null; u.fire = 'hold'; next(); } break;
       case 'assault': {
         /* Silent until compromised: the assault creeps in under fire control, and only fights its way forward once found. */
         if (!s.loud && (u.con || u.members.some(id => W.t - W.soldiers[id].hitAt < 8))) { s.loud = 1; s.go = 0; F.trace(W, u.call, 'Assault compromised: fighting through', 'In contact short of the objective'); }
@@ -343,6 +343,7 @@
   F.opOnReport = (W, m, u) => {
     const E = W.hq.el[u.id] = W.hq.el[u.id] || {}; if (m.data.phase) { E.phase = m.data.phase; E.t = m.t0; }
     if (m.data.hvt && !(m.data.hvt === 'absent' && W.hq.hvt && W.hq.hvt.state !== 'absent')) W.hq.hvt = { state: m.data.hvt, t: m.t0, from: u.call }; // a later "not on the objective" does not undo a report of him taken elsewhere
+    if (m.data.room) (W.hq.rooms = W.hq.rooms || {})[m.data.room] = { t: m.t0, from: u.call, civHurt: m.data.civHurt || 0 };
     if (m.data.secure) W.hq.secure = { t: m.t0, from: u.call };
     if (m.type === 'CONTACT') E.contact = m.t0; if (m.type === 'LACE') E.contact = null;
   };

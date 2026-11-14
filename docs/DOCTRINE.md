@@ -50,6 +50,37 @@ Checked against published doctrine only from general knowledge so far; to be ver
 - **The target's choice.** Woken by gunfire, the target hides in the compound about a third of the time and otherwise slips out after one to four minutes at night.
 - **Time cap.** An operation ends eight hours after H-hour if not everyone is back.
 
+## Compound raid: what follows practice
+
+General knowledge, unchecked. To verify against ATP 3-21.8 (room clearing, breaching) and FM 3-06, *Urban Operations*.
+
+| In the simulation | Practice it follows |
+| --- | --- |
+| Assault teams, a perimeter (security) team with an interpreter, and an air element that inserts, holds off the objective and returns for the pickup | Raid organisation for a helicopter-borne assault force (general knowledge) |
+| Explosive or manual breach of each door, chosen in the plan; a locked door may resist manual breaching | Breaching methods: mechanical, ballistic, explosive (ballistic is not modelled) |
+| Simultaneous breach: each team reports set at its charge and all go when every team is set, or on the code, or when one is heard | Synchronised breaching on a signal, with an execute code from the ground force commander (general knowledge) |
+| Each man goes to a point of domination in the room; rooms are cleared in sequence, and every room passed through is cleared | Room clearing by points of domination (general knowledge) |
+| No engagement without positive identification of a weapon; unarmed men are detained, women and children are controlled | Positive identification under the rules of engagement (general knowledge) |
+| A downed aircraft that cannot fly is destroyed before the force leaves | Denial of damaged equipment (general knowledge) |
+| JACKPOT for the target taken or killed; a time on target in the order after which the force leaves regardless | Common usage |
+
+## Compound raid: known departures and simplifications
+
+- **Walls block sight, not movement.** Teams walk the routes the plan gives them, through doorways; nothing stops a man from walking through a wall except that nobody plans to. Soldiers in file step where the man in front stepped.
+- **Two floors.** Sight, fire and hearing across floors: sight and fire never cross a floor, hearing always does. One staircase.
+- **Rooms.** Five rooms, each a rectangle; furniture, windows and roof access are not modelled. The yards are not cleared.
+- **Close-quarters fire.** Inside 20 m with an aimed track, rate of fire goes up fourfold. Hit chance goes up sixfold for US shooters and two and a half times for the occupants, who have no night vision and were asleep: tuned by feel against the real-world record of such raids.
+- **Waking.** Sleepers wake on helicopters (1.2 km at night), breaching charges (2.5 to 3.5 km), gunfire, a hard landing, or manual breaching close by, and are armed 15 to 45 seconds after a blast or gunfire, 45 to 120 seconds after other noise. One of the three men is awake now and then.
+- **Collateral.** A round that misses a man at close range has a 2% chance of hitting someone within 1.5 m of him. Charges wound people within 3.5 m on the other side 20% of the time.
+- **Hard landing.** Landing in a walled yard gives a 15% chance that the second aircraft lands hard and cannot fly; its crew go with the perimeter team, and the remaining aircraft carries everyone home (seats are not counted). There is no backup aircraft.
+- **Interpreter.** Part of the perimeter team; crowd control and tactical questioning are not modelled, and no one from the town comes to look yet.
+- **Ground force commander.** Not a person. The teams decide on the internal net; the command post can call ALPHA (breach now), DELTA (exfil now) or abort, and each reaches the teams by radio with the usual delay.
+- **Search.** Seven minutes per team after its last room, with no materials modelled.
+
+## A fix that changes the living base
+
+The line-of-sight check in observation had been commented out by a stray comment marker, so until this change soldiers saw through ridges. It is live again; the living base now hides units behind Hill 402 as intended.
+
 ## Known departures and simplifications
 
 - **Staff titles.** S3 and S4 are battalion staff officers. A company-sized base would be run by a commander, executive officer, first sergeant and supply sergeant. The titles were kept because the brief asked for an operations officer and a logistics officer; the cleanest fix is to make the base a small battalion task force command post, or to rename the roles.

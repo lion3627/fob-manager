@@ -261,7 +261,7 @@
     let pos = W.map.nodes[I.node], pace = P.insert === 'off' ? 'stealth' : 'rush';
     if (P.insert === 'off') { const rp = { x: C.x - 260, y: C.y + 60 }; steps.push({ k: 'cwalk', to: rp, f: 0, area: 'out', spd: 1.15, pace: 'patrol' }); say(`${call} at the release point.`, 'at the release point'); pos = rp; }
     if (id === 'p1') {
-      const cp = F.CORDON[P.cordon] || F.CORDON.n, q = abs(cp.x, cp.y); walkTo(steps, 'out', pos, q, 0, pace);
+      const cp = F.CORDON[P.cordon] || F.CORDON.n, q = abs(cp.x, cp.y); if (I.area !== 'out') pos = pathSteps(W, steps, route(W, I.area, pos, 'out', q, ['brE', 'brW']) || [], pos, 'rush'); walkTo(steps, 'out', pos, q, 0, pace);
       say(`${call} set on the perimeter, ${cp.name.toLowerCase()}.`, 'perimeter set'); steps.push({ k: 'block', until: [{ code: 'DELTA' }, { code: 'ABORT' }, { all: ['t1', 't2', 't3'], phase: 'ready for extraction' }] });
     } else {
       const T = P.teams[id];
@@ -360,7 +360,7 @@
           W.op.cleared[s.room] = W.op.cleared[s.room] || W.t; u.spots = null; u.file = true;
           const kia = occ.filter(x => x.side === 'red' && x.state === 'kia').length, civ = occ.filter(x => x.side === 'civ'), cd = civ.filter(x => x.state !== 'ok').length, det = u.det.length - (s.det0 || 0);
           const parts = []; if (det) parts.push(`${det} detained`); if (kia) parts.push(`${kia} enemy killed`); if (civ.length) parts.push(`${civ.length} women and children${cd ? `, ${cd} hurt` : ''}`);
-          sayNet(W, u, kia || cd ? 'P' : 'R', `${u.call} ${R.name.toLowerCase()} clear${parts.length ? ': ' + parts.join(', ') : ''}.`, 'room clear: ' + s.room, { room: s.room, civHurt: cd || undefined });
+          sayNet(W, u, kia || cd ? 'P' : 'R', `${u.call} ${R.name.toLowerCase()} clear${parts.length ? ': ' + parts.join(', ') : ''}.`, R.name.toLowerCase() + ' clear', { room: s.room, civHurt: cd || undefined });
           next();
         }
         return true;

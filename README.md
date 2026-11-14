@@ -21,6 +21,7 @@ Node 18 or later for the tests. The simulation itself has no dependencies.
 
 Pick an operation, write the plan on the map, approve it, then run it from the command post.
 
+- **Raid on Objective Lantern** (start here): a fictional compound raid planned from an empty page, one decision at a time. Choose how the force gets in (land in the courtyard, land outside the wall, or land far off and walk in), then for each of three assault teams its way in, whether to blow the door or open it by hand, and the rooms it clears in order; then the perimeter, then whether the breaches go together and how long to stay. The simulation drops to room scale: walls, doors and two floors, sleepers who wake and reach for weapons, women and children who must not be shot, and helicopters that are heard.
 - **Raid on Objective Cobalt**: a 12-man Special Forces team drives to a vehicle drop, walks to an objective rally point, closes on a compound at night and kills or captures the target, then exfiltrates.
 - **Cordon and raid on Objective Iron**: a rifle platoon of four elements. One squad blocks the escape route and the road from the next village, one sets a support-by-fire position, one assaults, and a vehicle section waits at the drop.
 

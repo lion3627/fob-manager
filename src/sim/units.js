@@ -8,7 +8,7 @@
   const fobPos = (W, k) => ({ x: W.map.nodes.fob.x + F.FOBLAY[k].x, y: W.map.nodes.fob.y + F.FOBLAY[k].y });
   F.fobPos = fobPos;
   F.ammoPct = (W, u) => F.selfRep(W, u).ammo;
-  function enemyEst(W, u) { const fr = F.fresh(W, u, 150); if (!fr.length) return { pos: { x: Math.round(u.pos.x), y: Math.round(u.pos.y) }, size: [1, 6], act: 'firing from unknown position', n: 0 }; const c = { x: 0, y: 0 }; fr.forEach(t => { c.x += t.x / fr.length; c.y += t.y / fr.length; }); return { pos: { x: Math.round(c.x + F.ri(W, -80, 80)), y: Math.round(c.y + F.ri(W, -80, 80)) }, size: [fr.length, fr.length + 2], act: fr.some(t => W.t - W.soldiers[t.id].firedAt < 30) ? 'engaging with small arms' : 'armed, moving', n: fr.length }; }
+  function enemyEst(W, u) { const fr = F.fresh(W, u, 150); if (!fr.length) return { pos: { x: Math.round(u.pos.x), y: Math.round(u.pos.y) }, size: [1, 6], act: 'firing from unknown position', n: 0 }; const c = { x: 0, y: 0 }; fr.forEach(t => { c.x += t.x / fr.length; c.y += t.y / fr.length; }); const j = W.map.cqb && F.dist(c, u.pos) < 60 ? 3 : 80; return { pos: { x: Math.round(c.x + F.ri(W, -j, j)), y: Math.round(c.y + F.ri(W, -j, j)) }, size: [fr.length, fr.length + 2], act: fr.some(t => W.t - W.soldiers[t.id].firedAt < 30) ? 'engaging with small arms' : 'armed, moving', n: fr.length }; }
   F.enemyEst = enemyEst;
 
   /* ---------- plans ---------- */
