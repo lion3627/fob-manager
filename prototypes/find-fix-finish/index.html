@@ -1,0 +1,1120 @@
+<!doctype html>
+<!-- PROTOTYPE - NOT FOR PRODUCTION -->
+<!-- Question: Does working a contested village through partial reports, with platoon leaders planning their own missions, produce a steady flow of meaningful decisions for a 20-30 minute session? -->
+<!-- Date: 2026-11-14 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Find, Fix, Finish</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #070a08; overflow: hidden; }
+  body { font-variant-numeric: tabular-nums; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #c9d4c2; }
+  #stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; }
+  canvas { display: block; position: absolute; left: 0; top: 0; width: 1280px; height: 720px; }
+  #panel { position: absolute; left: 820px; top: 0; width: 460px; height: 720px; background: #0e1411; border-left: 2px solid #26302a; display: none; flex-direction: column; font-size: 14px; }
+  #panel.on { display: flex; }
+  .hdr { padding: 8px 10px; border-bottom: 1px solid #26302a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dtg { font-family: 'Courier New', monospace; font-size: 20px; color: #e6ecd9; font-weight: bold; }
+  .ddl { font-size: 13px; color: #a6b39c; }
+  .spd button, .tabs button, .btn { background: #18211c; color: #c9d4c2; border: 1px solid #34413a; padding: 4px 8px; font-size: 13px; cursor: pointer; border-radius: 2px; }
+  .spd button.on, .tabs button.on { background: #2c3a31; color: #fff; border-color: #6c7f70; }
+  .btn:hover, .spd button:hover, .tabs button:hover { border-color: #8fa392; }
+  #dec { max-height: 300px; overflow-y: auto; }
+  .card { margin: 6px 8px; border: 2px solid #ff8c1a; background: #1a1610; padding: 8px; }
+  .card h4 { margin: 0 0 4px 0; color: #ffb366; font-size: 14px; }
+  .card p { margin: 2px 0; font-size: 13px; line-height: 1.35; color: #d8d2c4; }
+  .card .row { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 4px; padding: 6px 8px 0 8px; }
+  #body { flex: 1; overflow-y: auto; padding: 6px 10px; }
+  .log { font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.35; border-bottom: 1px dotted #26302a; padding: 3px 0; color: #c9d4c2; }
+  .log b { color: #e6ecd9; } .log.hot { color: #ffd2a8; } .log.bn { color: #b9c8e8; }
+  .st { border: 1px solid #26302a; padding: 6px; margin-bottom: 6px; }
+  .st h5 { margin: 0 0 3px 0; font-size: 14px; color: #e6ecd9; }
+  .st p { margin: 1px 0; font-size: 13px; }
+  .bar { height: 6px; background: #1c2520; margin: 3px 0; } .bar i { display: block; height: 6px; background: #6f8f6a; }
+  .foot { padding: 8px; border-top: 1px solid #26302a; display: flex; gap: 6px; }
+  .foot .btn { flex: 1; padding: 8px; font-size: 14px; }
+  #form { position: absolute; left: 830px; top: 60px; width: 440px; max-height: 640px; overflow-y: auto; background: #121a16; border: 1px solid #6c7f70; padding: 10px; display: none; font-size: 14px; }
+  #form.on { display: block; }
+  #form h3 { margin: 0 0 6px 0; font-size: 16px; color: #e6ecd9; }
+  #form .grp { margin: 8px 0; } #form .lbl { font-size: 12px; color: #a6b39c; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 1px; }
+  #form .opts { display: flex; gap: 4px; flex-wrap: wrap; }
+  #form .opts button.on { background: #2c3a31; color: #fff; border-color: #c9d4c2; }
+  #form .intent { font-size: 13px; color: #d8d2c4; background: #18211c; padding: 6px; }
+  .muted { color: #7f8c7a; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="game"></canvas><div id="panel"></div><div id="form"></div></div>
+<script src="config.js"></script>
+<script>
+'use strict';
+// The one-shot's starter: only what the checks read. Keep the fixed step, the clock hook,
+// window.game and the play and figures scenes. Everything else is the game's own: replace
+// what is marked "the game", and draw every figure in the brief's look, in 2D or with three.js.
+
+// ---- Built to be checked ----------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const tune = new Proxy({}, { get: (_, k) => CONFIG[k].value }); // live: tune.speed is CONFIG.speed.value
+const STEP = 1 / 60;            // simulation step in seconds; motion is per second, never per frame
+const W = 1280, H = 720;        // logical size; a pixel look lowers it and sets PIXEL
+const PIXEL = false;            // pixel looks: whole-number scale, no smoothing
+const FONT = "'Segoe UI', Roboto, Helvetica, Arial, sans-serif";      // the brief's look picks the type
+const TITLE = 'Find, Fix, Finish';
+const CONTROLS = ['Mouse: click compounds, drag to pan, wheel to zoom', 'N: task a platoon · Space: pause · 1-4: time speed', 'Arrows: pan · M: mute']; // shown on the title screen
+const clock = window.GAME_CLOCK || { now: () => performance.now() / 1000 }; // a check may inject one
+const CHEAP = params.get('render') === 'cheap'; // a headless shot or check: 3D draws cheap; players never see it
+let seed;
+function rng() { // mulberry32; every gameplay random call reads this, never Math.random
+  seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const events = []; // window.game.events: anything the game wants a run to see
+
+// ---- Screen ---------------------------------------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+let VIEWK = 1;
+function fit() { // fills the window at any size and pixel ratio; the DOM panels scale with the canvas
+  const k = Math.min(innerWidth / W, innerHeight / H);
+  const r = k * (devicePixelRatio || 1);
+  VIEWK = k;
+  canvas.width = Math.round(W * r); canvas.height = Math.round(H * r);
+  stage.style.transform = `scale(${k})`;
+  stage.style.left = Math.max(0, Math.floor((innerWidth - W * k) / 2)) + 'px';
+  stage.style.top = Math.max(0, Math.floor((innerHeight - H * k) / 2)) + 'px';
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.imageSmoothingEnabled = true;
+}
+addEventListener('resize', fit); fit();
+function clear(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function text(s, x, y, size, c, align = 'center', font = FONT) {
+  ctx.fillStyle = c; ctx.font = `${size}px ${font}`; ctx.textAlign = align;
+  ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+}
+
+// ---- Input: keys by position (event.code), OS key repeat ignored ------------------------
+const down = new Set(), hit = new Set();
+const pressed = code => hit.has(code); // true for one step after the key goes down
+addEventListener('keydown', e => {
+  startAudio();
+  if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT')) return;
+  if (!e.repeat) { down.add(e.code); hit.add(e.code); }
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => down.delete(e.code));
+addEventListener('pointerdown', () => startAudio());
+addEventListener('blur', () => down.clear());
+
+// ---- Audio: started on first input, mute on M --------------------------------------------
+let audio = null, muted = false;
+function startAudio() {
+  if (!audio) {
+    const ac = window.GAME_AUDIO || new (window.AudioContext || window.webkitAudioContext)(); // a check may inject one
+    const out = ac.createGain(); out.gain.value = muted ? 0 : tune.volume;
+    out.connect(ac.destination); audio = { ac, out };
+  }
+  if (audio.ac.state === 'suspended') audio.ac.resume();
+}
+function setMuted(m) { muted = m; if (audio) audio.out.gain.value = m ? 0 : tune.volume; }
+addEventListener('tune', () => setMuted(muted));
+function tone(freq, dur, type = 'square', vol = 0.3) {
+  if (!audio || muted) return;
+  const t = audio.ac.currentTime, o = audio.ac.createOscillator(), g = audio.ac.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.out); o.start(t); o.stop(t + dur);
+}
+function radioBlip() { tone(1150, 0.05, 'square', 0.08); setTimeout(() => tone(900, 0.06, 'square', 0.06), 70); }
+function alarm() { tone(660, 0.18, 'sawtooth', 0.12); setTimeout(() => tone(520, 0.25, 'sawtooth', 0.1), 200); }
+
+// =========================================================================================
+// THE WORLD (truth). The command post never reads this directly: it reads st.hq.
+// =========================================================================================
+const MAPW = 820;
+const COP = { x: 520, y: 1560 };
+const VCTR = { x: 2650, y: 1450 };
+const MOSQUE = { x: 2610, y: 1390 };
+const EXIT = { x: 4000, y: 1610 };
+const ROADLINE = [{ x: 0, y: 1585 }, { x: 520, y: 1580 }, { x: 1200, y: 1545 }, { x: 1900, y: 1505 }, { x: 2400, y: 1485 }, { x: 2900, y: 1505 }, { x: 3400, y: 1560 }, { x: 4000, y: 1610 }];
+const WADI = [{ x: 1600, y: 0 }, { x: 1700, y: 500 }, { x: 1850, y: 900 }, { x: 2030, y: 1230 }, { x: 2140, y: 1700 }, { x: 2050, y: 2200 }, { x: 1900, y: 3000 }];
+const HILL = { x: 2750, y: 560, rx: 720, ry: 260, name: 'Hill 1240' };
+const HILLPOST = { x: 2560, y: 820 };
+const ROUTES = {
+  ROAD: { name: 'the main road', pts: [{ x: 600, y: 1578 }, { x: 1200, y: 1545 }, { x: 1900, y: 1505 }, { x: 2260, y: 1490 }] },
+  NORTH: { name: 'the northern track and the wadi', pts: [{ x: 560, y: 1480 }, { x: 720, y: 1080 }, { x: 1450, y: 760 }, { x: 1780, y: 760 }, { x: 1880, y: 950 }, { x: 2040, y: 1250 }, { x: 2280, y: 1330 }] },
+  SOUTH: { name: 'the southern fields', pts: [{ x: 600, y: 1650 }, { x: 820, y: 1960 }, { x: 1550, y: 2120 }, { x: 2120, y: 1930 }, { x: 2330, y: 1690 }] },
+};
+const NAMES = ['Karim', 'Nadir', 'Wahid', 'Rahim', 'Jalal', 'Habib', 'Faizal', 'Sharif', 'Qasim', 'Latif', 'Bashir', 'Hamid', 'Zarif', 'Akbar', 'Daud', 'Naim', 'Samad', 'Wali', 'Yusuf', 'Rauf', 'Saber', 'Tahir', 'Zaman', 'Anwar', 'Farid', 'Ghafoor', 'Haroon', 'Ismail', 'Jamil', 'Khalil', 'Mansur', 'Nasrullah', 'Obaid', 'Rashid', 'Salim', 'Tariq', 'Usman', 'Waheed', 'Zubair', 'Aziz', 'Bilal', 'Dost', 'Fazal', 'Hakim', 'Idris', 'Javed', 'Kabir', 'Lal', 'Mirwais', 'Navid'];
+const SURN = ['Reyes', 'Okafor', 'Brandt', 'Nguyen', 'Kowalski', 'Harris', 'Delgado', 'Price', 'Moreno', 'Fischer', 'Baker', 'Coleman', 'Diaz', 'Evans', 'Foster', 'Grant', 'Hughes', 'Ibarra', 'Jensen', 'Kim', 'Lopez', 'Mason', 'Novak', 'Ortiz', 'Patel', 'Quinn', 'Ruiz', 'Shaw', 'Torres', 'Underwood', 'Vance', 'Walsh', 'Young', 'Zimmer', 'Abbott', 'Bishop', 'Carter', 'Dunn', 'Ellis', 'Ford', 'Garcia', 'Hale', 'Irwin', 'Jordan', 'Keller', 'Lane', 'Murphy', 'Nash', 'Owens', 'Perry'];
+const RANKS = ['PVT', 'PFC', 'PFC', 'SPC', 'SPC', 'SPC', 'SGT', 'SGT', 'SSG'];
+
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pick = arr => arr[Math.floor(rng() * arr.length)];
+function segDist(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy; let t = l ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l : 0; t = clamp(t, 0, 1); return Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y); }
+function lineDist(p, pts) { let d = 1e9; for (let i = 1; i < pts.length; i++) d = Math.min(d, segDist(p, pts[i - 1], pts[i])); return d; }
+function lerpTo(p, q, d) { const L = dist(p, q); if (L <= d) return { x: q.x, y: q.y, arrived: true }; return { x: p.x + (q.x - p.x) * d / L, y: p.y + (q.y - p.y) * d / L, arrived: false }; }
+
+// Time: st.t is game minutes since 1800 on day 1.
+const mod = t => (1080 + t) % 1440;
+const dayOf = t => 1 + Math.floor((1080 + t) / 1440);
+const hhmm = t => { const m = mod(Math.floor(t)); return String(Math.floor(m / 60)).padStart(2, '0') + String(m % 60).padStart(2, '0'); };
+const dtg = t => `D${dayOf(Math.floor(t))} ${hhmm(t)}`;
+const isNight = t => { const m = mod(t); return m < 330 || m >= 1140; };
+function nextAt(t, m) { let d = (m - mod(t) + 1440) % 1440; return t + d; }
+
+let state; let st; // the whole run: truth, each side's knowledge, the decisions
+
+function makeWorld() {
+  const w = { families: [], people: {}, pid: 0 };
+  // Compounds around the village centre, a few outlying.
+  const pos = [];
+  let tries = 0;
+  while (pos.length < tune.families && tries++ < 4000) {
+    const out = pos.length >= tune.families - 3;
+    const r = out ? 480 + rng() * 260 : 60 + rng() * 380, a = rng() * Math.PI * 2;
+    const p = { x: Math.round(VCTR.x + Math.cos(a) * r * 1.25), y: Math.round(VCTR.y + Math.sin(a) * r * 0.9) };
+    if (Math.abs(p.y - 1490) < 30 && p.x > 2200 && p.x < 3200) continue; // keep off the road
+    if (dist(p, MOSQUE) < 70) continue;
+    if (pos.some(q => dist(p, q) < 95)) continue;
+    pos.push(p);
+  }
+  pos.sort((a, b) => a.x - b.x || a.y - b.y);
+  const used = new Set();
+  const nm = () => { let n; do n = pick(NAMES); while (used.has(n) && used.size < NAMES.length - 2); used.add(n); return n; };
+  pos.forEach((p, i) => {
+    const head = nm();
+    const f = { cid: i + 1, name: `${head}'s family`, head, pos: p, leaning: 0, fear: 0.12 + rng() * 0.12, causes: [], knows: [], members: [], held: 0 };
+    const add = (name, role, fam) => { const id = 'p' + (++w.pid); w.people[id] = { id, name, role, fam: f.cid, status: 'home', history: [] }; f.members.push(id); return id; };
+    add('Haji ' + head, 'elder');
+    const sons = Math.floor(rng() * 4);
+    for (let k = 0; k < sons; k++) add(nm() + ' son of ' + head, 'mam');
+    f.dependents = 2 + Math.floor(rng() * 6);
+    w.families.push(f);
+  });
+  const fam = cid => w.families[cid - 1];
+  // Leanings: a spread, three families close to the cell, two close to us.
+  const g = () => { let u = 0; for (let k = 0; k < 6; k++) u += rng(); return (u - 3) / 1.0; };
+  w.families.forEach(f => { f.leaning = clamp(tune.leaningMean + g() * tune.leaningSpread * 0.7, -0.35, 0.35); });
+  const far = [...w.families].sort((a, b) => dist(b.pos, COP) - dist(a.pos, COP));
+  const cellFams = [far[0], far[2], far[4]];
+  cellFams.forEach(f => { f.leaning = -0.45 - rng() * 0.15; });
+  const near = [...w.families].filter(f => !cellFams.includes(f)).sort((a, b) => dist(a.pos, COP) - dist(b.pos, COP));
+  [near[1], near[4]].forEach(f => { f.leaning = 0.35 + rng() * 0.15; });
+  w.families.forEach(f => f.causes.push({ t: -1, d: 0, why: 'standing before the deployment' }));
+  // The elder (the malik): the family nearest the mosque.
+  const elder = [...w.families].sort((a, b) => dist(a.pos, MOSQUE) - dist(b.pos, MOSQUE))[0];
+  elder.isElder = true; elder.leaning = 0.05;
+  if (cellFams.includes(elder)) { elder.leaning = -0.1; }
+  // The cell: fighters from families that lean its way, the leader an outsider.
+  const cell = { money: 3, explosives: tune.explosives, cacheCid: cellFams[1].cid, seized: false, threat: 0, fighters: [], safe: cellFams.map(f => f.cid),
+    kb: { pending: [], sight: [], routeUse: { ROAD: [], NORTH: [], SOUTH: [] }, suspects: {}, raided: {} }, spotters: [], tax: null, ied: null, lastBed: null, harassed: {} };
+  const cands = [];
+  [...w.families].sort((a, b) => a.leaning - b.leaning).forEach(f => f.members.forEach(id => { if (w.people[id].role === 'mam') cands.push(id); }));
+  for (const id of cands.slice(0, tune.fighters)) { w.people[id].role = 'fighter'; w.people[id].history.push({ t: -1, what: 'joined the cell before the deployment' }); cell.fighters.push(id); }
+  w.cell = cell;
+  const lid = 'p' + (++w.pid);
+  w.people[lid] = { id: lid, name: 'Qari Zahid', role: 'leader', fam: null, status: 'free', history: [{ t: -1, what: 'came to the valley to lead the cell' }] };
+  w.leader = { id: lid, cid: cell.safe[0], state: 'in', pos: { ...fam(cell.safe[0]).pos }, dest: null, destCid: null, movedAt: -999, mosque: 0, escort: cell.fighters.slice(0, 2) };
+  // What families already know: the cache, which sons joined.
+  w.families.forEach(f => {
+    if (dist(f.pos, fam(cell.cacheCid).pos) < tune.neighbourSight && f.cid !== cell.cacheCid && rng() < 0.5) f.knows.push({ kind: 'cache', cid: cell.cacheCid, t: -60 * (5 + rng() * 40), real: true });
+    cell.fighters.forEach(id => { const h = fam(w.people[id].fam); if (h !== f && dist(f.pos, h.pos) < tune.neighbourSight && rng() < 0.5) f.knows.push({ kind: 'fighter', cid: h.cid, who: id, t: -60 * (24 + rng() * 100), real: true }); });
+    if (dist(f.pos, w.leader.pos) < tune.neighbourSight && rng() < 0.6 && f.cid !== w.leader.cid) f.knows.push({ kind: 'leader', cid: w.leader.cid, t: -60 * (2 + rng() * 20), real: true });
+  });
+  w.fam = fam;
+  return w;
+}
+
+function makeCompany() {
+  const pls = [
+    { id: '1', name: '1st Platoon', pl: 'LT Brandt', trait: 'steady', fatigue: 30, job: 'security' },
+    { id: '2', name: '2nd Platoon', pl: 'LT Reyes', trait: 'cautious', fatigue: 18, job: 'cop' },
+    { id: '3', name: '3rd Platoon', pl: 'LT Okafor', trait: 'bold', fatigue: 48, job: 'cop' },
+  ];
+  let k = 0;
+  pls.forEach(p => {
+    p.soldiers = [];
+    for (let i = 0; i < 28; i++) p.soldiers.push({ name: `${pick(RANKS)} ${SURN[(k++ * 7 + 3) % SURN.length]}`, state: 'ok', history: [] });
+    p.pos = { ...COP }; p.mission = null; p.lastPos = -999; p.detainees = []; p.notes = []; p.swapAt = null;
+  });
+  return pls;
+}
+
+function reset() {
+  seed = Number(params.get('seed')) || CONFIG.seed;
+  const world = makeWorld();
+  st = { t: 0, acc: 0, speed: 0, score: 0, gained: '', over: null, w: world, pls: makeCompany(), missions: [], mid: 0,
+    radio: [], detainees: [], well: null, ccir: { contact: true, casualty: true, target: true, tip: true, backbrief: true, debrief: true, hostile: true, detainee: true },
+    hq: { log: [], marks: [], leads: [], notes: {}, pl: {}, dec: [], did: 0, flash: null, stats: { cas: 0, kia: 0, civcas: 0, detained: 0, released: 0, caches: 0 } },
+    sel: null, cam: { x: 1950, y: 1460, s: 0.27 }, tab: 'log', form: null, truth: params.get('dev') === '1', battalion: [] };
+  state = st;
+  gossip(); gossip();
+  st.pls.forEach(p => { st.hq.pl[p.id] = { pos: { ...COP }, t: 0 }; });
+  hqLog('BN', 'FRAGO 14: Capture Qari ZAHID, cell leader: about 40, beard, walks with a limp in the left leg. Believed to bed down in the village east of COP Kestrel. NLT ' + dtg(tune.deadlineHours * 60) + '. Detain only on positive identification or a hostile act.', 'bn');
+  hqLog('XO', 'Sir, 1st Platoon has the outpost. 2nd is rested; 3rd is just back from convoy escort and tired. Suggest a presence patrol into the village and a meeting with the malik (the village elder) to start building the picture.', '');
+  events.length = 0;
+  rebuildPanel();
+}
+
+// =========================================================================================
+// THE COMMAND POST'S KNOWLEDGE (st.hq) and the radio
+// =========================================================================================
+function hqLog(from, txt, cls = '', ccir = null) {
+  st.hq.log.unshift({ t: st.t, from, txt, cls });
+  if (ccir && st.ccir[ccir]) interrupt(`${from}: ${txt}`);
+  panelDirty = true;
+}
+function interrupt(msg) {
+  if (st.speed > 1) st.speed = 1;
+  st.hq.flash = { msg, t: st.t };
+  alarm();
+  events.push({ kind: 'interrupt', msg });
+}
+function commsOk(p) { // the low wadi north of the road is dead ground to the outpost's radio
+  if (lineDist(p, WADI.slice(0, 4)) < 90 && p.y < 1180) return false;
+  return true;
+}
+function radio(pl, txt, opt = {}) { // a message from a platoon: delivered after a delay, held while out of comms
+  st.radio.push({ pl: pl.id, from: pl.name.replace(' Platoon', ' PLT'), txt, at: st.t + tune.radioDelay, cls: opt.cls || '', ccir: opt.ccir || null, apply: opt.apply || null, mark: opt.mark || null });
+}
+function radioTick() {
+  for (let i = 0; i < st.radio.length; i++) {
+    const m = st.radio[i], pl = st.pls.find(p => p.id === m.pl);
+    if (st.t < m.at) continue;
+    if (pl && pl.mission && !commsOk(pl.pos)) continue; // held until the platoon has a link
+    st.radio.splice(i--, 1);
+    if (m.silent) { if (m.apply) m.apply(); continue; }
+    radioBlip();
+    if (m.mark) st.hq.marks.push({ ...m.mark, t: m.mark.t ?? st.t });
+    if (m.apply) m.apply();
+    hqLog(m.from, m.txt, m.cls, m.ccir);
+  }
+}
+function decision(title, body, options) {
+  const d = { id: ++st.hq.did, title, body, options, t: st.t };
+  st.hq.dec.push(d); panelDirty = true; return d;
+}
+function closeDecision(d) { st.hq.dec = st.hq.dec.filter(x => x !== d); panelDirty = true; }
+
+// =========================================================================================
+// THE POPULATION
+// =========================================================================================
+function lean(f, d, why) {
+  if (!d) return;
+  f.leaning = clamp(f.leaning + d, -1, 1);
+  f.causes.push({ t: st.t, d, why });
+}
+function familyAt(p, r) { return st.w.families.filter(f => dist(f.pos, p) < r); }
+function hasPerson(f, kind, cid) { return f.knows.some(k => k.kind === kind && k.cid === cid && st.t - k.t < 120); }
+function share(f) { // what a family is willing to tell a patrol, true or not
+  const w = st.w;
+  const willing = f.leaning - f.fear * 0.4 + 0.05;
+  if (f.leaning < -0.35 && rng() < tune.deceiveChance * 0.4) { // a family loyal to the cell sends you to the wrong door
+    const fake = pick(w.families.filter(x => x.leaning > 0 && x.cid !== f.cid));
+    if (fake) return { kind: 'leader', cid: fake.cid, t: st.t - 60 * (2 + Math.floor(rng() * 8)), real: false };
+  }
+  if (willing < 0.08) return null;
+  if (rng() > tune.tipChance * (willing + 0.25)) return null;
+  const items = f.knows.filter(k => k.real !== null).sort((a, b) => (b.kind === 'leader') - (a.kind === 'leader') || b.t - a.t);
+  return items[0] || null;
+}
+function gossip() { // 0900: news travels between neighbours who trust each other
+  const fs = st.w.families;
+  fs.forEach(f => fs.forEach(n => {
+    if (n === f || dist(n.pos, f.pos) > 420 || Math.sign(n.leaning) !== Math.sign(f.leaning) && Math.abs(n.leaning - f.leaning) > 0.4) return;
+    const k = n.knows.filter(k => k.kind !== 'letter' && st.t - k.t < 1440)[Math.floor(rng() * n.knows.length)];
+    if (k && rng() < 0.35 && !f.knows.some(x => x.kind === k.kind && x.cid === k.cid && x.t >= k.t)) f.knows.push({ ...k });
+  }));
+}
+function tipText(f, k) {
+  const ago = Math.max(0, Math.round((st.t - k.t) / 60));
+  const when = ago < 2 ? 'last night' : `about ${ago} hours ago`;
+  if (k.kind === 'leader') return `${f.head} says men from outside, one with a limp, stayed at compound ${k.cid} ${when}.`;
+  if (k.kind === 'cache') return `${f.head} says the cell keeps weapons at compound ${k.cid}.`;
+  if (k.kind === 'fighter') return `${f.head} says a son of compound ${k.cid} carries a rifle for the cell.`;
+  if (k.kind === 'left') return `${f.head} says the man with the limp left the valley ${when}.`;
+  return `${f.head} shared rumours.`;
+}
+
+// =========================================================================================
+// THE CELL: acts only on what its spotters and friends have told it
+// =========================================================================================
+function leaderPos() { return st.w.leader.pos; }
+function cellSense() {
+  const w = st.w, c = w.cell, night = isNight(st.t);
+  for (const pl of st.pls) {
+    if (!pl.mission || !['out', 'obj', 'back'].includes(pl.mission.stage)) continue;
+    let seen = false;
+    for (const s of c.spotters) if (dist(s.pos, pl.pos) < (night ? tune.spotRangeNight : tune.spotRangeDay) && rng() < 0.5) seen = true;
+    if (!seen) for (const f of w.families) {
+      if (f.leaning > -0.3) continue;
+      const r = night ? 130 : 280;
+      if (dist(f.pos, pl.pos) < r && rng() < (night ? 0.06 : 0.1)) { seen = true; break; }
+    }
+    if (seen) {
+      const stop = pl.mission.at;
+      c.kb.pending.push({ at: st.t + tune.warnDelay, t: st.t, pos: { ...pl.pos }, pl: pl.id, stopCid: stop ? stop.cid : null, kind: pl.mission.type });
+    }
+  }
+}
+function cellLearn() {
+  const w = st.w, c = w.cell, L = w.leader;
+  for (let i = 0; i < c.kb.pending.length; i++) {
+    const s = c.kb.pending[i]; if (st.t < s.at) continue;
+    c.kb.pending.splice(i--, 1); c.kb.sight.push(s);
+    if (!isNight(s.t) && dist(s.pos, VCTR) > 450) for (const r in ROUTES) if (lineDist(s.pos, ROUTES[r].pts) < 140) { const u = c.kb.routeUse[r]; if (!u.length || s.t - u[u.length - 1] > 90) u.push(s.t); }
+    if (s.stopCid) { const f = w.fam(s.stopCid); if (f.leaning > -0.1 && !f.isElder) c.kb.suspects[s.stopCid] = s.t; if (f.isElder && f.leaning < 0.1) c.kb.suspects[s.stopCid] = s.t; }
+    // The leader moves when soldiers are reported close, unless he moved in the last half hour.
+    if (L.state === 'in' && dist(s.pos, L.pos) < tune.fleeRange && st.t - L.movedAt > 30) {
+      const opts = c.safe.filter(cid => cid !== L.cid && !c.kb.raided[cid]);
+      if (opts.length) {
+        const to = opts.sort((a, b) => dist(w.fam(b).pos, s.pos) - dist(w.fam(a).pos, s.pos))[0];
+        moveLeader(to, `soldiers reported ${Math.round(dist(s.pos, L.pos))} m away`);
+      }
+    }
+  }
+}
+function moveLeader(cid, why) {
+  const L = st.w.leader;
+  L.state = 'moving'; L.destCid = cid; L.dest = { ...st.w.fam(cid).pos }; L.cid = null; L.movedAt = st.t;
+  st.w.people[L.id].history.push({ t: st.t, what: `moved to compound ${cid}: ${why}` });
+  events.push({ kind: 'leader-move', cid, why });
+}
+function cellHourly() {
+  const w = st.w, c = w.cell, L = w.leader, m = mod(st.t), day = dayOf(st.t);
+  if (L.state === 'gone' || L.state === 'captured') { c.spotters = []; return; }
+  const fighters = c.fighters.filter(id => w.people[id].status === 'home');
+  if (m === 1200) { // 2000: choose where to sleep, away from recent patrols and raided houses
+    const recent = c.kb.sight.filter(s => st.t - s.t < 1440);
+    const opts = c.safe.filter(cid => !c.kb.raided[cid]).map(cid => ({ cid, score: recent.filter(s => dist(s.pos, w.fam(cid).pos) < 450).length * 2 + (cid === c.lastBed ? 1.5 : 0) + rng() }));
+    opts.sort((a, b) => a.score - b.score);
+    const to = opts[0] ? opts[0].cid : null;
+    if (to && to !== L.cid && L.state === 'in') moveLeader(to, 'bedding down for the night');
+    c.lastBed = to || L.cid;
+  }
+  if (m === 1260 && c.threat > tune.threatEscape && L.state === 'in') { // 2100: pressure too high, he leaves the valley
+    L.state = 'leaving'; L.dest = { ...EXIT }; L.cid = null; L.movedAt = st.t;
+    w.people[L.id].history.push({ t: st.t, what: 'left the valley: the pressure was too high' });
+    events.push({ kind: 'leader-leaving' });
+  }
+  if (m === 1320) { // 2200: night letters to families seen talking to soldiers
+    for (const cid in c.kb.suspects) {
+      const f = w.fam(+cid);
+      if (st.t - c.kb.suspects[cid] > 1440) continue;
+      const guarded = st.pls.some(p => p.mission && dist(p.pos, f.pos) < 300);
+      if (guarded || rng() > 0.6) continue;
+      f.fear = clamp(f.fear + tune.intimidFear, 0, 1); lean(f, 0.03, 'resentment at a night letter from the cell');
+      f.causes.push({ t: st.t, d: 0, why: 'a night letter from the cell: fear rises' });
+      delete c.kb.suspects[cid];
+      events.push({ kind: 'intimidation', cid: f.cid });
+      f.knows.push({ kind: 'letter', cid: f.cid, t: st.t, real: true });
+    }
+  }
+  if (m === 0 && !c.ied && c.explosives > 0 && fighters.length >= 2) { // midnight: lay a device where patrols repeat themselves
+    for (const r in ROUTES) {
+      const uses = c.kb.routeUse[r].filter(t => st.t - t < 1440).length;
+      if (uses >= tune.patternPasses) {
+        const pts = ROUTES[r].pts, i = Math.max(1, pts.length - 2);
+        const p = { x: Math.round((pts[i - 1].x + pts[i].x) / 2), y: Math.round((pts[i - 1].y + pts[i].y) / 2) };
+        c.ied = { route: r, pos: p, laid: st.t, seen: false }; c.explosives--;
+        events.push({ kind: 'ied-laid', route: r });
+        break;
+      }
+    }
+  }
+  if (m === 420) { // 0700: post spotters on the roofs of friendly houses and on the hill
+    c.spotters = [];
+    const roofs = w.families.filter(f => f.leaning < -0.25).sort((a, b) => dist(a.pos, COP) - dist(b.pos, COP)).slice(0, 2);
+    roofs.forEach(f => c.spotters.push({ pos: { ...f.pos }, cid: f.cid }));
+    if (fighters.length >= 3) c.spotters.push({ pos: { ...HILLPOST }, cid: null });
+    if (day >= 2 && fighters.length >= 3 && !c.kb.sight.some(s => st.t - s.t < 120 && s.pos.x > 2600)) {
+      c.tax = { pos: { x: 3150, y: 1528 }, men: fighters.slice(-3), until: st.t + 150 };
+      c.tax.men.forEach(id => { w.people[id].status = 'tax'; });
+    }
+  }
+  if (m === 1080) c.spotters = [];
+  if (m === 540) gossip();
+  if (m === 720) { // noon: recruit, forget a little pressure
+    c.threat = Math.max(0, c.threat - tune.threatDecay);
+    if (c.money >= 1 && rng() < tune.recruitChance) {
+      const f = w.families.filter(f => f.leaning < -0.25).sort(() => rng() - 0.5)[0];
+      const id = f && f.members.find(id => w.people[id].role === 'mam' && w.people[id].status === 'home');
+      if (id) { w.people[id].role = 'fighter'; w.people[id].history.push({ t: st.t, what: 'recruited by the cell for pay' }); c.fighters.push(id); c.money--; events.push({ kind: 'recruit', cid: f.cid });
+        w.families.forEach(n => { if (n !== f && dist(n.pos, f.pos) < tune.neighbourSight && rng() < 0.4) n.knows.push({ kind: 'fighter', cid: f.cid, who: id, t: st.t, real: true }); }); }
+    }
+    if (L.state === 'in' && !c.kb.sight.some(s => st.t - s.t < 120 && dist(s.pos, MOSQUE) < 800)) { L.mosque = st.t; L.home = L.cid; L.state = 'moving'; L.destCid = -1; L.dest = { ...MOSQUE }; L.cid = null; L.movedAt = st.t; }
+  }
+}
+function leaderTick() {
+  const w = st.w, L = w.leader;
+  if (L.state === 'moving' || L.state === 'leaving') {
+    const n = lerpTo(L.pos, L.dest, 55); L.pos = { x: n.x, y: n.y };
+    if (n.arrived) {
+      if (L.state === 'leaving') { L.state = 'gone'; w.families.forEach(f => { if (dist(f.pos, EXIT) < 900 || rng() < 0.25) f.knows.push({ kind: 'left', cid: 0, t: st.t, real: true }); }); events.push({ kind: 'leader-gone' }); return; }
+      if (L.destCid === -1) { L.state = 'mosque'; L.until = st.t + 35; return; }
+      L.state = 'in'; L.cid = L.destCid;
+      w.families.forEach(f => { if (f.cid !== L.cid && dist(f.pos, L.pos) < tune.neighbourSight && rng() < 0.55) f.knows.push({ kind: 'leader', cid: L.cid, t: st.t, real: true }); });
+    }
+  } else if (L.state === 'mosque' && st.t >= L.until) {
+    L.state = 'moving'; L.destCid = L.home || w.cell.safe[0]; L.dest = { ...w.fam(L.destCid).pos };
+  }
+  const c = w.cell;
+  if (c.tax && st.t >= c.tax.until) {
+    c.tax.men.forEach(id => { if (w.people[id].status === 'tax') w.people[id].status = 'home'; });
+    c.money += 2;
+    w.families.forEach(f => { if (lineDist(f.pos, ROADLINE) < 350) lean(f, tune.taxResent, 'taxed by the cell on the road'); });
+    c.tax = null;
+  }
+}
+
+// =========================================================================================
+// YOUR COMPANY: missions, back-briefs, the platoons' own decisions
+// =========================================================================================
+const TYPES = {
+  patrol: { label: 'Presence patrol', intent: c => `Be seen in the village around compound ${c}, reassure families, and learn who supports the cell.`, needsTarget: true },
+  kle: { label: 'Meeting with the malik', intent: () => 'Meet the village elder, show respect, and learn what he will share about the cell.', needsTarget: false },
+  search: { label: 'Compound search', intent: c => `Search compound ${c} for weapons and persons of interest, with the least harm to the family.`, needsTarget: true },
+  raid: { label: 'Raid (night)', intent: c => `Isolate compound ${c} and detain Qari ZAHID if he is there. Speed and surprise over thoroughness.`, needsTarget: true },
+};
+function newMission(o) {
+  const pl = st.pls.find(p => p.id === o.pl);
+  const m = { id: ++st.mid, type: o.type, pl: pl.id, cid: TYPES[o.type].needsTarget ? o.cid : null, roe: o.roe, timing: o.timing, nlt: st.t + o.nltH * 60, entry: o.entry, stage: 'planning', planAt: st.t + tune.planMinutes + (pl.fatigue > tune.tiredAt ? 15 : 0), path: [], i: 0, at: null, found: [], tips: [], visits: [], seen: {} };
+  pl.mission = m; pl.job = 'mission'; st.missions.push(m);
+  hqLog('CO', `Tasked ${pl.name}: ${TYPES[o.type].label}${m.cid ? ' at compound ' + m.cid : ''}. ROE ${o.roe}. ${o.timing === 'asap' ? 'Move when ready' : o.timing === 'dark' ? 'Move after dark' : 'Move at first light'}, back NLT ${dtg(m.nlt)}.`);
+  panelDirty = true;
+}
+function routeScore(r, m, pl, avoid) {
+  let s = { ROAD: 0, NORTH: 3, SOUTH: 2 }[r];
+  const uses = st.missions.filter(x => x !== m && x.routes && x.routes.includes(r) && st.t - x.left < 1440).length;
+  s += uses * 3;
+  if (st.hq.marks.some(k => k.kind === 'ied' && lineDist(k.pos, ROUTES[r].pts) < 150)) s += 20;
+  if (m.type === 'raid' && r === 'NORTH') s -= 3;
+  if (m.type === 'patrol' && r === 'ROAD') s -= 1;
+  if (pl.trait === 'cautious' && r === 'ROAD') s += 2;
+  if (pl.trait === 'bold') s -= r === 'ROAD' ? 1 : 0;
+  if (avoid === r) s += 50;
+  return { r, s, uses };
+}
+function plan(m, avoid) {
+  const pl = st.pls.find(p => p.id === m.pl), w = st.w;
+  const sc = ['ROAD', 'NORTH', 'SOUTH'].map(r => routeScore(r, m, pl, avoid)).sort((a, b) => a.s - b.s);
+  const out = sc[0].r, back = sc[1].r;
+  let dep = st.t + 15;
+  if (m.timing === 'dark') dep = isNight(st.t) ? st.t + 15 : nextAt(st.t, 1170);
+  if (m.timing === 'light') dep = isNight(st.t) ? nextAt(st.t, 330) : st.t + 15;
+  if (m.type === 'raid' && !isNight(dep)) dep = nextAt(dep, 1260);
+  const path = [{ ...COP }];
+  ROUTES[out].pts.forEach(p => path.push({ ...p }));
+  const tgt = m.cid ? w.fam(m.cid) : null;
+  if (m.type === 'patrol') {
+    const sector = familyAt(tgt.pos, 260).sort((a, b) => dist(a.pos, ROUTES[out].pts.at(-1)) - dist(b.pos, ROUTES[out].pts.at(-1))).slice(0, 5);
+    sector.forEach(f => path.push({ x: f.pos.x + 30, y: f.pos.y + 25, act: 'visit', cid: f.cid, dur: 10 }));
+  } else if (m.type === 'kle') {
+    const e = w.families.find(f => f.isElder); m.cid = e.cid;
+    path.push({ x: e.pos.x + 25, y: e.pos.y + 20, act: 'kle', cid: e.cid, dur: 50 });
+  } else {
+    path.push({ x: tgt.pos.x + 20, y: tgt.pos.y + 20, act: m.type, cid: m.cid, dur: m.type === 'raid' ? 35 : (m.entry === 'forced' ? 45 : 70) });
+  }
+  [...ROUTES[back].pts].reverse().forEach(p => path.push({ ...p }));
+  path.push({ ...COP });
+  let L = 0; for (let i = 1; i < path.length; i++) L += dist(path[i - 1], path[i]);
+  const dwell = path.reduce((a, p) => a + (p.dur || 0), 0);
+  const durMin = Math.round(L / tune.footSpeed + dwell);
+  m.path = path; m.routes = [out, back]; m.dep = dep; m.dur = durMin; m.outR = out; m.backR = back;
+  const notes = [];
+  if (sc[0].uses === 0 && sc.find(x => x.r === 'ROAD').uses > 0 && out !== 'ROAD') notes.push('We used the road recently; I am not setting a pattern.');
+  if (st.hq.marks.some(k => k.kind === 'ied')) notes.push('Avoiding the reported device.');
+  if (m.type === 'raid' && out === 'NORTH') notes.push('The wadi covers our approach, but we lose comms with you in the low ground north of the road.');
+  if (out === 'NORTH' || back === 'NORTH') notes.push('Expect no position reports while we are in the wadi.');
+  const late = dep + durMin > m.nlt;
+  if (late) notes.push(`This takes about ${Math.round(durMin / 60 * 10) / 10} h; we would be back after the NLT. Recommend a later NLT or a smaller sector.`);
+  if (pl.fatigue > tune.tiredAt) notes.push(`The platoon is tired (fatigue ${Math.round(pl.fatigue)}). Mistakes and rough handling are more likely. Request we rest first.`);
+  const onContact = m.roe === 'restrictive' ? 'On contact: return fire only on positively identified shooters, break contact, report.' : 'On contact: return fire, fix and report; I will not pursue into compounds.';
+  const what = { patrol: `Walk the sector around compound ${m.cid}: ${path.filter(p => p.act === 'visit').map(p => p.cid).join(', ')}, about 10 minutes at each door.`, kle: `Escort you to the malik's compound ${m.cid}; one squad inside, two outside.`, search: `Cordon compound ${m.cid} with two squads, search with one, ${m.entry === 'forced' ? 'forced entry' : 'knock and ask the head of the family to open'}.`, raid: `Isolate compound ${m.cid} at night, two squads on the cordon first, assault squad in on my call.` }[m.type];
+  m.brief = [
+    `<b>Concept:</b> depart ${dtg(dep)} via ${ROUTES[out].name}. ${what} Return via ${ROUTES[back].name}, back about ${dtg(dep + durMin)}.`,
+    `<b>${onContact}</b>`,
+    notes.length ? `<b>Risks and requests:</b> ${notes.join(' ')}` : '<b>Risks:</b> none beyond the usual.',
+  ];
+  m.stage = 'backbrief';
+}
+function backbrief(m) {
+  const pl = st.pls.find(p => p.id === m.pl);
+  const d = decision(`${pl.name} back-brief (${pl.pl})`, [`<b>Mission:</b> ${TYPES[m.type].label}${m.cid ? ' at compound ' + m.cid : ''}. <b>Intent:</b> ${TYPES[m.type].intent(m.cid)}`, ...m.brief], [
+    { label: 'Approve', fn: () => { m.stage = 'approved'; m.left = m.dep; hqLog('CO', `Approved ${pl.name}'s plan. SP ${dtg(m.dep)}.`); } },
+    { label: 'Use another route', fn: () => { plan(m, m.outR); backbrief(m); } },
+    { label: 'Leave after dark', fn: () => { m.timing = 'dark'; plan(m); backbrief(m); } },
+    { label: 'Extend NLT 4 h', fn: () => { m.nlt += 240; plan(m); backbrief(m); } },
+    { label: 'Cancel', fn: () => { pl.mission = null; pl.job = 'cop'; m.stage = 'cancelled'; hqLog('CO', `Cancelled ${pl.name}'s task.`); } },
+  ]);
+  m.dec = d;
+  hqLog(pl.name.replace(' Platoon', ' PLT'), `Ready to back-brief: ${TYPES[m.type].label}.`, '', 'backbrief');
+}
+function plTick(pl) {
+  const m = pl.mission, w = st.w;
+  // Fatigue and the security rotation
+  const per = pl.job === 'mission' && m && ['out', 'obj', 'back'].includes(m.stage) ? tune.fatigueOut : pl.job === 'security' ? tune.fatigueGuard : -tune.fatigueRest;
+  pl.fatigue = clamp(pl.fatigue + per / 60, 0, 100);
+  if (pl.swapAt && st.t >= pl.swapAt) { st.pls.forEach(p => { if (p.job === 'security') p.job = 'cop'; }); pl.job = 'security'; pl.swapAt = null; hqLog('1SG', `${pl.name} has taken over outpost security.`); }
+  if (!m) return;
+  if (m.stage === 'planning' && st.t >= m.planAt) { plan(m); backbrief(m); return; }
+  if (m.stage === 'approved' && st.t >= m.dep) { m.stage = 'out'; m.left = st.t; pl.lastPos = st.t; radio(pl, `SP from COP Kestrel via ${ROUTES[m.outR].name}.`); }
+  if (!['out', 'obj', 'back'].includes(m.stage)) return;
+  // Position reports
+  if (st.t - pl.lastPos >= tune.posrepEvery && commsOk(pl.pos)) { pl.lastPos = st.t; const p = { ...pl.pos }, t = st.t; st.radio.push({ pl: pl.id, from: '', txt: '', at: st.t + 1, apply: () => { st.hq.pl[pl.id] = { pos: p, t }; }, silent: true }); }
+  // At a stop
+  if (m.at) {
+    if (st.t < m.at.until) { atStop(pl, m, m.at); return; }
+    endStop(pl, m, m.at); m.at = null; m.i++;
+  }
+  if (m.stage !== 'back' && st.t > m.nlt - 30 && m.path.slice(m.i + 1).some(p => p.act)) cutShort(pl, m, 'NLT approaching');
+  const nxt = m.path[m.i + 1];
+  if (!nxt) { finish(pl, m); return; }
+  const tired = pl.fatigue > tune.tiredAt ? 0.85 : 1;
+  const n = lerpTo(pl.pos, nxt, tune.footSpeed * tired * (m.type === 'raid' ? 1.15 : 1));
+  pl.pos = { x: n.x, y: n.y };
+  iedCheck(pl, m);
+  if (n.arrived) {
+    if (nxt.act) { m.at = { ...nxt, until: st.t + nxt.dur, start: st.t }; m.stage = 'obj'; startStop(pl, m, m.at); }
+    else m.i++;
+  }
+}
+function cutShort(pl, m, why) {
+  // drop remaining stops, head home by the planned return route
+  const rest = m.path.slice(m.i + 1).filter(p => !p.act);
+  const back = [...ROUTES[m.backR].pts].reverse().map(p => ({ ...p }));
+  m.path = [...m.path.slice(0, m.i + 1), ...back, { ...COP }];
+  m.stage = 'back'; m.at = null;
+  radio(pl, `Heading back: ${why}.`);
+}
+function startStop(pl, m, s) {
+  const w = st.w, f = w.fam(s.cid), L = w.leader;
+  if (s.act === 'search' || s.act === 'raid') {
+    // The cordon closes. Whoever is inside is inside.
+    radio(pl, `Cordon set on compound ${s.cid}.`);
+    if (L.state === 'in' && L.cid === s.cid) captureLeader(pl, m, s.cid);
+  }
+}
+function atStop(pl, m, s) {
+  const w = st.w, f = w.fam(s.cid), L = w.leader;
+  // During a raid the cordon can catch him slipping out.
+  if ((s.act === 'raid' || s.act === 'search') && L.state === 'moving' && dist(L.pos, f.pos) < 160 && rng() < 0.35) captureLeader(pl, m, s.cid, 'caught leaving the cordon');
+  if (s.act === 'visit' || s.act === 'kle') maybeHarass(pl, m, s);
+}
+function endStop(pl, m, s) {
+  const w = st.w, f = w.fam(s.cid), c = w.cell;
+  const tired = pl.fatigue > tune.tiredAt;
+  const mood = () => { const v = f.leaning + (rng() - 0.5) * 0.3; return v > 0.15 ? '+' : v < -0.15 ? '-' : '0'; };
+  if (s.act === 'visit') {
+    if (tired && rng() < 0.4) { lean(f, -tune.roughVisit, `rough handling by tired soldiers of ${pl.name}`); m.notes = (m.notes || []); }
+    else if (f.leaning > -0.4) lean(f, tune.goodVisit, `a respectful visit by ${pl.name}`);
+    const k = share(f);
+    if (k) { const txt = tipText(f, k); m.tips.push({ txt, cid: k.cid, kind: k.kind, real: k.real });
+      if (k.kind === 'leader' || k.kind === 'left') radio(pl, `TIP from compound ${f.cid}: ${txt}`, { cls: 'hot', ccir: 'tip', apply: () => st.hq.leads.unshift({ t: st.t, cid: k.cid, txt, src: `${pl.name} patrol, compound ${f.cid}`, kind: k.kind }) }); }
+    m.visits.push({ cid: f.cid, mood: mood() });
+  }
+  if (s.act === 'kle') {
+    const e = f; lean(e, tune.goodVisit, 'the commander came to meet him');
+    if (e.leaning > 0.12) {
+      const known = w.families.filter(x => x.leaning > -0.2).flatMap(x => x.knows).filter(k => k.kind === 'leader' || k.kind === 'cache' || k.kind === 'left').sort((a, b) => b.t - a.t)[0];
+      const txt = known ? tipText(e, known) : `${e.head} says he hears nothing of the man you seek.`;
+      radio(pl, `Malik: ${txt}`, { cls: 'hot', ccir: 'tip', apply: () => { if (known) st.hq.leads.unshift({ t: st.t, cid: known.cid, txt, src: 'the malik', kind: known.kind }); } });
+    } else {
+      radio(pl, `Malik ${e.head} was polite and said little. He asked for the village well pump to be repaired.`, { cls: '' });
+      if (e.leaning < 0.1) c.kb.suspects[e.cid] = st.t;
+    }
+    if (!st.well) { st.well = { asked: st.t }; decision('The malik asks for the well pump to be repaired', ['<b>Request:</b> the village pump is broken. Battalion can fund a repair; a contractor would take about 12 hours.', 'A kept promise builds trust across the village. A broken one costs it.'], [
+      { label: 'Promise the repair', fn: () => { st.well.promised = st.t; st.well.done = st.t + 720; hqLog('CO', 'Promised the malik the pump repair; contractor tasked.'); } },
+      { label: 'Decline politely', fn: () => { st.well.declined = true; lean(e, -0.05, 'his request was declined'); hqLog('CO', 'Declined the pump repair for now.'); } },
+    ]); }
+    m.visits.push({ cid: e.cid, mood: mood() });
+  }
+  if (s.act === 'search' || s.act === 'raid') {
+    const found = [];
+    if (c.cacheCid === s.cid && !c.seized) { c.seized = true; c.explosives = 0; found.push('a weapons cache: rifles, ammunition, explosive components'); c.threat += 0.25; st.hq.stats.caches++; }
+    const home = f.members.filter(id => w.people[id].role === 'fighter' && w.people[id].status === 'home');
+    home.forEach(id => { const p = w.people[id]; p.status = 'detained'; p.history.push({ t: st.t, what: `detained in a search by ${pl.name}` }); pl.detainees.push(id); found.push(`${p.name} (a rifle and chest rig hidden in his room)`); c.threat += 0.15; });
+    const forced = s.act === 'raid' || m.entry === 'forced';
+    if (found.length) lean(f, -tune.searchHit * 0.5, 'their compound was searched and weapons found');
+    else { lean(f, -(forced ? tune.forcedHit : tune.searchHit), forced ? 'doors broken at night, nothing found' : 'searched, nothing found');
+      familyAt(f.pos, 200).forEach(n => { if (n !== f) lean(n, -0.03, `the neighbours' compound ${f.cid} was searched for nothing`); }); }
+    c.kb.raided[s.cid] = st.t; c.threat += 0.12;
+    const res = found.length ? `Found ${found.join('; ')}.` : 'Nothing of interest found.';
+    radio(pl, `Search of compound ${s.cid} complete. ${res}`, { cls: found.length ? 'hot' : '', ccir: found.length ? 'hostile' : null, mark: c.cacheCid === s.cid && found.length ? { kind: 'cache', pos: { ...f.pos }, label: 'cache seized' } : null });
+    m.visits.push({ cid: f.cid, mood: mood() });
+  }
+  if (m.path.slice(m.i + 1).every(p => !p.act)) m.stage = 'back';
+}
+function captureLeader(pl, m, cid, how = 'found inside') {
+  const L = st.w.leader;
+  L.state = 'captured'; L.cid = null;
+  st.w.people[L.id].status = 'detained'; st.w.people[L.id].history.push({ t: st.t, what: `detained by ${pl.name} at compound ${cid}: ${how}` });
+  pl.detainees.push(L.id);
+  radio(pl, `JACKPOT. Detained a man matching ZAHID ${cid ? 'at compound ' + cid : 'in the street'}: beard, limp in the left leg, ${how}. Bringing him in.`, { cls: 'hot', ccir: 'target', apply: () => { st.hq.captured = st.t; } });
+  events.push({ kind: 'capture' });
+}
+function maybeHarass(pl, m, s) {
+  const w = st.w, c = w.cell;
+  if (isNight(st.t) || m.harassed || c.harassed[m.id]) return;
+  const knows = c.kb.sight.some(x => x.pl === pl.id && st.t - x.t < 30);
+  const free = c.fighters.filter(id => w.people[id].status === 'home');
+  const hostile = familyAt(pl.pos, 300).reduce((a, f) => a + f.leaning, 0) / Math.max(1, familyAt(pl.pos, 300).length);
+  if (!knows || free.length < 3 || hostile > -0.05) return;
+  c.harassed[m.id] = true; m.harassed = true;
+  if (rng() > tune.harassChance) return;
+  // A short fight: who is hurt is decided here, minute by minute.
+  const shooters = free.slice(0, 3); let wia = 0, kia = 0, red = 0, civ = null;
+  for (let k = 0; k < 8; k++) {
+    if (rng() < 0.05) wia++;
+    if (rng() < 0.1) { const id = shooters[Math.floor(rng() * shooters.length)]; if (w.people[id].status === 'home') { w.people[id].status = rng() < 0.5 ? 'dead' : 'wounded'; w.people[id].history.push({ t: st.t, what: `hit firing on ${pl.name}` }); red++; } }
+    if (!civ && rng() < (m.roe === 'restrictive' ? 0.015 : 0.05)) { const f = pick(familyAt(pl.pos, 250)); if (f) civ = f; }
+  }
+  if (rng() < 0.15 && wia) { kia = 1; wia--; }
+  hurt(pl, wia, kia, 'small-arms fire near compound ' + s.cid);
+  if (civ) { lean(civ, -tune.civcasHit, `a son was wounded in crossfire during a firefight with ${pl.name}`); familyAt(civ.pos, 250).forEach(n => { if (n !== civ) lean(n, -0.08, `a neighbour was hurt in a firefight`); }); st.hq.stats.civcas++; }
+  c.threat += 0.05;
+  const txt = `TIC: took small-arms fire from the east side of compound ${s.cid}, about 3 shooters. Returned fire, contact broken after ~8 min. ${wia + kia ? `Friendly casualties: ${wia} WIA${kia ? ', ' + kia + ' KIA' : ''}.` : 'No friendly casualties.'} ${red ? `${red} enemy possibly hit.` : ''} ${civ ? `A local man was wounded in compound ${civ.cid}; medic treating.` : ''}`;
+  radio(pl, txt, { cls: 'hot', ccir: 'contact', mark: { kind: 'hostile', pos: { x: pl.pos.x + 60, y: pl.pos.y - 20 }, label: 'TIC 3x' } });
+  if (wia + kia) cutShort(pl, m, 'CASEVAC');
+}
+function hurt(pl, wia, kia, why) {
+  const ok = pl.soldiers.filter(s => s.state === 'ok');
+  for (let i = 0; i < wia + kia && ok.length; i++) { const s = ok.splice(Math.floor(rng() * ok.length), 1)[0]; s.state = i < kia ? 'kia' : 'wia'; s.history.push({ t: st.t, what: `${s.state === 'kia' ? 'killed' : 'wounded'}: ${why}` }); }
+  if (wia + kia) { st.hq.stats.cas += wia; st.hq.stats.kia += kia; radio(pl, `CASEVAC: ${wia} urgent${kia ? ', ' + kia + ' KIA' : ''}. Moving back to COP by ground.`, { cls: 'hot', ccir: 'casualty' }); }
+}
+function iedCheck(pl, m) {
+  const c = st.w.cell; if (!c.ied) return;
+  const d = dist(pl.pos, c.ied.pos);
+  if (d < 160 && !m.seen.ied) {
+    m.seen.ied = true;
+    if (rng() < tune.iedSpotChance * (pl.fatigue > tune.tiredAt ? 0.5 : 1) * (isNight(st.t) ? 0.6 : 1)) {
+      const p = { ...c.ied.pos };
+      radio(pl, `Possible IED: disturbed earth and a command wire at the culvert on ${ROUTES[c.ied.route].name}. Marked, bypassing.`, { cls: 'hot', ccir: 'hostile', mark: { kind: 'ied', pos: p, label: 'IED' } });
+      c.ied.seen = true; return;
+    }
+  }
+  if (d < 25 && !c.ied.seen) {
+    const hitNow = rng() < tune.iedHitChance; const pos = { ...c.ied.pos }; c.ied = null;
+    if (hitNow) { const wia = 1 + Math.floor(rng() * 2), kia = rng() < 0.25 ? 1 : 0; hurt(pl, wia, kia, 'IED strike');
+      radio(pl, `IED strike on ${ROUTES[m.outR === m.routes[0] ? m.outR : m.backR].name}. ${wia} WIA${kia ? ', 1 KIA' : ''}. Securing the site.`, { cls: 'hot', ccir: 'contact', mark: { kind: 'ied', pos, label: 'IED strike' } }); cutShort(pl, m, 'CASEVAC after IED strike'); }
+    else radio(pl, `Small blast near the patrol on the route, no casualties. Likely a failed device.`, { cls: 'hot', ccir: 'contact', mark: { kind: 'ied', pos, label: 'blast' } });
+  }
+}
+function blueSee(pl) {
+  const m = pl.mission; if (!m || !['out', 'obj', 'back'].includes(m.stage)) return;
+  const w = st.w, c = w.cell, L = w.leader, night = isNight(st.t);
+  const R = (night ? tune.sightNight : tune.sightDay) * (pl.fatigue > tune.tiredAt ? 0.75 : 1);
+  const look = (key, pos, chance, fn) => { if (dist(pl.pos, pos) < R && rng() < chance && (!m.seen[key] || st.t - m.seen[key] > 30)) { m.seen[key] = st.t; fn(); } };
+  c.spotters.forEach((s, i) => look('sp' + i, s.pos, 0.08, () => { const p = { x: s.pos.x + 10, y: s.pos.y - 10 }; radio(pl, `SPOTREP: 1 MAM on a rooftop${s.cid ? ' at compound ' + s.cid : ' on the hillside'}, watching us, talking on a phone. Not hostile act; continuing.`, { ccir: 'hostile', mark: { kind: 'unknown', pos: p, label: 'watcher' } }); }));
+  if (c.tax) look('tax', c.tax.pos, 0.15, () => radio(pl, `SPOTREP: illegal checkpoint on the road east of the village, 3 armed MAM stopping vehicles.`, { cls: 'hot', ccir: 'hostile', mark: { kind: 'hostile', pos: { ...c.tax.pos }, label: '3x armed' } }));
+  if (['moving', 'mosque', 'leaving'].includes(L.state)) look('ldr', L.pos, 0.2, () => {
+    const close = dist(pl.pos, L.pos) < tune.idRange;
+    const p = { ...L.pos };
+    if (close && dist(pl.pos, L.pos) < tune.idRange * 0.6 && rng() < 0.5) { captureLeader(pl, m, 0, 'stopped in the street and identified against the battalion description'); return; }
+    radio(pl, close ? `SPOTREP: POSSIBLE ZAHID. MAM with a beard and a limp, 2 escorts, moving ${L.state === 'mosque' ? 'at the mosque' : 'between compounds'}. Too far / no PID to detain.` : `SPOTREP: 3 MAM moving between compounds, ~${Math.round(dist(pl.pos, L.pos))} m. No identification.`, { cls: close ? 'hot' : '', ccir: close ? 'target' : 'hostile', mark: { kind: close ? 'target' : 'unknown', pos: p, label: close ? 'poss. ZAHID' : '3x MAM' } });
+  });
+}
+function finish(pl, m) {
+  m.stage = 'done'; pl.mission = null; pl.job = 'cop'; pl.pos = { ...COP };
+  st.hq.pl[pl.id] = { pos: { ...COP }, t: st.t };
+  pl.detainees.forEach(id => { st.detainees.push({ id, at: st.t, q: 0, done: false }); st.hq.stats.detained++; });
+  const dets = pl.detainees.length; pl.detainees = [];
+  const visits = m.visits, tips = m.tips.filter(k => k.kind !== 'leader' && k.kind !== 'left');
+  setTimeout0(() => {
+    visits.forEach(v => { st.hq.notes[v.cid] = { mood: v.mood, t: st.t }; });
+    tips.forEach(k => st.hq.leads.unshift({ t: st.t, cid: k.cid, txt: k.txt, src: `${pl.name} debrief`, kind: k.kind }));
+    const moods = visits.map(v => `${v.cid}${v.mood}`).join(' ');
+    hqLog(pl.name.replace(' Platoon', ' PLT'), `Debrief: back at COP. ${visits.length ? 'Atmosphere by compound (+ welcoming, 0 neutral, - hostile): ' + moods + '. ' : ''}${tips.length ? tips.map(k => k.txt).join(' ') + ' ' : ''}${dets ? dets + ' detainee(s) handed to the detention cell.' : ''}`, '', 'debrief');
+  }, 20);
+}
+const later = [];
+function setTimeout0(fn, mins) { later.push({ at: st.t + mins, fn }); }
+function detaineeTick() {
+  const w = st.w;
+  for (const d of st.detainees) {
+    if (d.done) continue;
+    const p = w.people[d.id];
+    if (p.role === 'leader') { d.done = true; continue; }
+    if (p.role !== 'fighter') { const f = w.fam(p.fam); if (st.t % 60 === 0) lean(f, -0.02, `${p.name} held at the outpost`); }
+    d.q++;
+    if (d.q === 360) {
+      d.done = true;
+      const c = w.cell, L = w.leader;
+      let txt = `${p.name} denies everything.`;
+      if (p.role === 'fighter' && rng() < 0.6) {
+        if (L.state !== 'gone' && L.state !== 'captured' && rng() < 0.6) { const cid = L.cid || c.lastBed || c.safe[0]; txt = `${p.name} says ZAHID sleeps at compound ${cid} some nights, and also uses ${c.safe.filter(x => x !== cid).join(' and ')}.`; st.hq.leads.unshift({ t: st.t, cid, txt, src: 'detainee questioning', kind: 'leader' }); }
+        else if (!c.seized) { txt = `${p.name} says the cell's weapons are at compound ${c.cacheCid}.`; st.hq.leads.unshift({ t: st.t, cid: c.cacheCid, txt, src: 'detainee questioning', kind: 'cache' }); }
+      }
+      hqLog('S2', `Questioning complete: ${txt}`, 'hot', 'detainee');
+    }
+  }
+}
+function wellTick() {
+  if (st.well && st.well.done && st.t === st.well.done) { st.w.families.forEach(f => lean(f, tune.wellGain, 'the village pump was repaired as promised')); hqLog('XO', 'The contractor reports the village pump repaired.'); }
+}
+
+// =========================================================================================
+// One game minute
+// =========================================================================================
+function simMinute() {
+  const m = mod(st.t);
+  if (m % 60 === 0) cellHourly();
+  leaderTick();
+  st.pls.forEach(plTick);
+  cellSense();
+  cellLearn();
+  st.pls.forEach(blueSee);
+  radioTick();
+  detaineeTick(); wellTick();
+  for (let i = 0; i < later.length; i++) if (st.t >= later[i].at) { later[i].fn(); later.splice(i--, 1); }
+  st.t++;
+  if (st.hq.captured != null && st.t - st.hq.captured > 5 && !st.over) endRun('win');
+  if (st.t >= tune.deadlineHours * 60 && !st.over) endRun('deadline');
+}
+function endRun(how) {
+  st.over = how; st.speed = 0;
+  const L = st.w.leader;
+  if (how === 'win') st.gained = `Qari ZAHID detained at ${dtg(st.hq.captured)}.`;
+  else st.gained = 'Deadline reached. Qari ZAHID not detained.';
+  st.battalion = how === 'win' ? ['Battalion confirms the detainee is ZAHID by biometrics.'] : L.state === 'gone' ? ['Battalion assessment: reporting suggests ZAHID left the valley; the hunt passes to the brigade.'] : ['Battalion assessment: ZAHID is believed still in the area. The task passes to the incoming company.'];
+  events.push({ kind: 'end', how });
+  scene = 'results'; panelDirty = true;
+}
+
+// =========================================================================================
+// DRAWING: the map board shows only what the command post has been told
+// =========================================================================================
+const COL = { board: '#161c15', grid: '#243024', terrain: '#3a4733', road: '#8d856c', wadi: '#3f6170', field: '#22301f', cmpd: '#a3ab92', cmpdFill: '#1f261c', text: '#a9b39c', blue: '#5a9cf0', red: '#ec5a50', yellow: '#e8cf52', green: '#62b862', orange: '#ff8c1a', pencil: '#d9d2b0' };
+const toS = p => ({ x: (p.x - st.cam.x) * st.cam.s + MAPW / 2, y: (p.y - st.cam.y) * st.cam.s + H / 2 });
+const toW = (x, y) => ({ x: (x - MAPW / 2) / st.cam.s + st.cam.x, y: (y - H / 2) / st.cam.s + st.cam.y });
+function polyline(pts, color, wdt, dash = []) { ctx.strokeStyle = color; ctx.lineWidth = wdt; ctx.setLineDash(dash); ctx.beginPath(); pts.forEach((p, i) => { const q = toS(p); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.stroke(); ctx.setLineDash([]); }
+
+// MIL-STD-2525 style frames, drawn in code
+function symFriendly(x, y, label, alpha = 1, dashed = false, sz = 1) {
+  ctx.globalAlpha = alpha; const w = 30 * sz, h = 20 * sz;
+  ctx.fillStyle = 'rgba(90,156,240,0.25)'; ctx.fillRect(x - w / 2, y - h / 2, w, h);
+  ctx.strokeStyle = COL.blue; ctx.lineWidth = 2; ctx.setLineDash(dashed ? [4, 3] : []); ctx.strokeRect(x - w / 2, y - h / 2, w, h); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(x - w / 2, y - h / 2); ctx.lineTo(x + w / 2, y + h / 2); ctx.moveTo(x + w / 2, y - h / 2); ctx.lineTo(x - w / 2, y + h / 2); ctx.stroke(); // infantry
+  ctx.fillStyle = COL.blue; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(x + i * 6 * sz, y - h / 2 - 5 * sz, 1.8 * sz, 0, 7); ctx.fill(); } // platoon echelon
+  if (label) text(label, x - w / 2 - 4, y, 13, COL.blue, 'right');
+  ctx.globalAlpha = 1;
+}
+function symHostile(x, y, label, alpha = 1, dashed = false, armed = true) {
+  ctx.globalAlpha = alpha; const r = 13;
+  ctx.fillStyle = 'rgba(236,90,80,0.22)'; ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = COL.red; ctx.lineWidth = 2; ctx.setLineDash(dashed ? [4, 3] : []); ctx.stroke(); ctx.setLineDash([]);
+  if (armed) { ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke(); }
+  if (label) text(label, x + r + 4, y, 12, COL.red, 'left');
+  ctx.globalAlpha = 1;
+}
+function symUnknown(x, y, label, alpha = 1, dashed = false, color = COL.yellow) {
+  ctx.globalAlpha = alpha; const r = 6;
+  ctx.fillStyle = 'rgba(232,207,82,0.18)'; ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dashed ? [3, 3] : []);
+  ctx.beginPath(); [[0, -r], [r, 0], [0, r], [-r, 0]].forEach(([dx, dy]) => { ctx.moveTo(x + dx + r, y + dy); ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2); }); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 2, 0, 7); ctx.fill(); // a person
+  if (label) text(label, x + 16, y, 12, color, 'left');
+  ctx.globalAlpha = 1;
+}
+function symTarget(x, y, label, alpha = 1) {
+  symUnknown(x, y, '', alpha, false, COL.red);
+  ctx.globalAlpha = alpha; ctx.strokeStyle = COL.red; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 18, 0, 7); ctx.moveTo(x - 24, y); ctx.lineTo(x - 12, y); ctx.moveTo(x + 12, y); ctx.lineTo(x + 24, y); ctx.moveTo(x, y - 24); ctx.lineTo(x, y - 12); ctx.stroke();
+  if (label) text(label, x + 26, y, 12, COL.red, 'left'); ctx.globalAlpha = 1;
+}
+function symIED(x, y, label, alpha = 1) {
+  ctx.globalAlpha = alpha; ctx.strokeStyle = COL.red; ctx.fillStyle = 'rgba(236,90,80,0.2)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, y - 11); ctx.lineTo(x + 11, y + 8); ctx.lineTo(x - 11, y + 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 2); ctx.stroke(); ctx.beginPath(); ctx.arc(x, y + 5, 1.2, 0, 7); ctx.fillStyle = COL.red; ctx.fill();
+  if (label) text(label, x + 14, y, 12, COL.red, 'left'); ctx.globalAlpha = 1;
+}
+function symCache(x, y, label, alpha = 1) {
+  symHostile(x, y, '', alpha, false, false);
+  ctx.globalAlpha = alpha; ctx.strokeStyle = COL.red; ctx.lineWidth = 1.5; ctx.strokeRect(x - 5, y - 4, 10, 8); ctx.beginPath(); ctx.moveTo(x - 5, y - 1); ctx.lineTo(x + 5, y - 1); ctx.stroke();
+  if (label) text(label, x + 17, y, 12, COL.red, 'left'); ctx.globalAlpha = 1;
+}
+function symCompound(x, y, n, sel, sz = 1) {
+  const s = 14 * sz;
+  ctx.fillStyle = COL.cmpdFill; ctx.fillRect(x - s, y - s, s * 2, s * 2);
+  ctx.strokeStyle = sel ? '#ffffff' : COL.cmpd; ctx.lineWidth = sel ? 2.5 : 1.5; ctx.strokeRect(x - s, y - s, s * 2, s * 2);
+  ctx.strokeStyle = COL.cmpd; ctx.lineWidth = 1; ctx.strokeRect(x - s * 0.55, y - s * 0.75, s * 0.9, s * 0.6); ctx.strokeRect(x + s * 0.1, y + s * 0.15, s * 0.65, s * 0.6); // rooms
+  ctx.beginPath(); ctx.moveTo(x - s * 0.35, y + s); ctx.lineTo(x - s * 0.35, y + s * 0.6); ctx.stroke(); // gate
+  text(String(n), x, y - s - 9, 12, sel ? '#fff' : COL.text);
+}
+function symCOP(x, y, sz = 1) {
+  const w = 44 * sz, h = 32 * sz;
+  ctx.fillStyle = 'rgba(90,156,240,0.18)'; ctx.fillRect(x - w / 2, y - h / 2, w, h);
+  ctx.strokeStyle = COL.blue; ctx.lineWidth = 2.5; ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+  ctx.beginPath(); for (let i = 0; i < 4; i++) { const cx = x - w / 2 + (i % 2) * w, cy = y - h / 2 + Math.floor(i / 2) * h; ctx.rect(cx - 4, cy - 4, 8, 8); } ctx.stroke(); // towers
+  ctx.beginPath(); ctx.moveTo(x - 4, y + 8); ctx.lineTo(x - 4, y - 10); ctx.lineTo(x + 9, y - 6); ctx.lineTo(x - 4, y - 2); ctx.stroke(); // flag
+  text('COP KESTREL', x, y + h / 2 + 12, 12, COL.blue);
+}
+function symMosque(x, y) { ctx.strokeStyle = COL.cmpd; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 9, Math.PI, 0); ctx.lineTo(x + 9, y + 9); ctx.lineTo(x - 9, y + 9); ctx.closePath(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x + 14, y + 9); ctx.lineTo(x + 14, y - 14); ctx.stroke(); text('mosque', x, y + 20, 11, COL.text); }
+
+function ageStyle(t) { const a = st.t - t; return { alpha: a < 60 ? 1 : a < 360 ? 0.75 : a < 1440 ? 0.5 : 0.3, dashed: a >= 60 }; }
+
+function drawBoard() {
+  const night = isNight(st.t);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, MAPW, H); ctx.clip();
+  ctx.fillStyle = COL.board; ctx.fillRect(0, 0, MAPW, H);
+  // grid, 500 m
+  ctx.strokeStyle = COL.grid; ctx.lineWidth = 1;
+  for (let x = 0; x <= 4000; x += 500) { const a = toS({ x, y: 0 }), b = toS({ x, y: 3000 }); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); text(String(40 + x / 100).padStart(3, '0'), a.x + 3, 10, 10, '#4a5a48', 'left'); }
+  for (let y = 0; y <= 3000; y += 500) { const a = toS({ x: 0, y }), b = toS({ x: 4000, y }); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); text(String(70 + y / 100).padStart(3, '0'), 4, a.y + 8, 10, '#4a5a48', 'left'); }
+  // terrain the map already shows
+  const hc = toS(HILL);
+  for (let k = 0; k < 4; k++) { ctx.strokeStyle = COL.terrain; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(hc.x, hc.y, HILL.rx * st.cam.s * (1 - k * 0.22), HILL.ry * st.cam.s * (1 - k * 0.22), -0.1, 0, Math.PI * 2); ctx.stroke(); }
+  text(HILL.name, hc.x, hc.y, 12, '#6f7f62');
+  ctx.fillStyle = COL.field; [[2250, 1700, 1100, 450], [2900, 1050, 600, 280], [1300, 1700, 650, 300]].forEach(([x, y, w, h]) => { const a = toS({ x, y }); ctx.fillRect(a.x, a.y, w * st.cam.s, h * st.cam.s); ctx.strokeStyle = '#2c3c27'; ctx.beginPath(); for (let i = 0; i < w; i += 60) { const p = toS({ x: x + i, y }), q = toS({ x: x + i, y: y + h }); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); } ctx.stroke(); });
+  polyline(WADI, COL.wadi, 5); polyline(WADI, '#5c8496', 1.5, [6, 4]);
+  const wl = toS(WADI[2]); text('wadi', wl.x + 14, wl.y, 11, '#6f97a8', 'left');
+  polyline(ROADLINE, COL.road, 4);
+  polyline(ROUTES.NORTH.pts.slice(0, 4), '#6d6656', 1.5, [3, 4]); polyline(ROUTES.SOUTH.pts, '#6d6656', 1.5, [3, 4]);
+  // dead ground (from the signals plan)
+  const dg = toS({ x: 1820, y: 860 }); ctx.strokeStyle = 'rgba(160,160,120,0.5)'; ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.ellipse(dg.x, dg.y, 230 * st.cam.s, 330 * st.cam.s, 0.35, 0, 7); ctx.stroke(); ctx.setLineDash([]); text('no comms', dg.x, dg.y, 11, '#8a8a70');
+  const cop = toS(COP); symCOP(cop.x, cop.y, Math.max(0.6, st.cam.s / 0.2));
+  const mq = toS(MOSQUE); symMosque(mq.x, mq.y);
+  // compounds, numbered, with what debriefs said about them
+  st.w.families.forEach(f => { const p = toS(f.pos); symCompound(p.x, p.y, f.cid, st.sel === f.cid, Math.max(0.6, st.cam.s / 0.2) * 0.75);
+    const n = st.hq.notes[f.cid]; if (n) text(n.mood === '+' ? '+' : n.mood === '-' ? '−' : '0', p.x + 15, p.y + 13, 15, n.mood === '+' ? COL.blue : n.mood === '-' ? COL.red : COL.pencil);
+    if (f.isElder) text('malik', p.x, p.y + 22, 10, COL.pencil); });
+  // approved plans: grease pencil
+  st.missions.filter(m => ['approved', 'out', 'obj', 'back'].includes(m.stage)).forEach(m => polyline(m.path, 'rgba(90,156,240,0.55)', 1.5, [8, 5]));
+  // leads: pencil rings
+  const seenLead = new Set();
+  st.hq.leads.forEach(l => { if (!l.cid || seenLead.has(l.cid)) return; seenLead.add(l.cid); const f = st.w.fam(l.cid); if (!f) return; const p = toS(f.pos), a = ageStyle(l.t); ctx.globalAlpha = a.alpha; ctx.strokeStyle = COL.pencil; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]); ctx.beginPath(); ctx.arc(p.x, p.y, 22, 0, 7); ctx.stroke(); ctx.setLineDash([]); text(`${l.kind === 'cache' ? 'cache?' : l.kind === 'fighter' ? 'fighter?' : 'Z?'} ${hhmm(l.t)}`, p.x, p.y + 31, 11, COL.pencil); ctx.globalAlpha = 1; });
+  // reported marks, ageing
+  st.hq.marks.forEach(k => { const p = toS(k.pos), a = ageStyle(k.t), lab = `${k.label} ${hhmm(k.t)}`;
+    if (k.kind === 'hostile') symHostile(p.x, p.y, lab, a.alpha, a.dashed); else if (k.kind === 'unknown') symUnknown(p.x, p.y, lab, a.alpha, a.dashed);
+    else if (k.kind === 'target') symTarget(p.x, p.y, lab, a.alpha); else if (k.kind === 'ied') symIED(p.x, p.y, lab, a.alpha); else if (k.kind === 'cache') symCache(p.x, p.y, lab, a.alpha); });
+  // platoons where they last reported
+  st.pls.forEach(pl => { const k = st.hq.pl[pl.id]; const out = pl.mission && ['out', 'obj', 'back'].includes(pl.mission.stage); if (!out) return; const p = toS(k.pos), a = ageStyle(k.t); symFriendly(p.x, p.y, pl.id, Math.max(0.45, a.alpha), st.t - k.t > tune.posrepEvery + 10); text(hhmm(k.t), p.x, p.y + 20, 11, COL.blue); });
+  // developer truth view (off in play)
+  if (st.truth) drawTruth();
+  // scale bar and north
+  const sb = 1000 * st.cam.s; ctx.strokeStyle = COL.text; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(MAPW - 20 - sb, H - 22); ctx.lineTo(MAPW - 20, H - 22); ctx.stroke(); text('1 km', MAPW - 20 - sb / 2, H - 34, 11, COL.text);
+  text('N ↑', MAPW - 30, 24, 14, COL.text);
+  if (night) { ctx.fillStyle = 'rgba(40,0,0,0.12)'; ctx.fillRect(0, 0, MAPW, H); }
+  ctx.restore();
+  ctx.strokeStyle = '#26302a'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, MAPW - 2, H - 2);
+}
+function drawTruth() {
+  const w = st.w;
+  w.families.forEach(f => { const p = toS(f.pos); ctx.fillStyle = f.leaning > 0 ? `rgba(90,156,240,${Math.abs(f.leaning)})` : `rgba(236,90,80,${Math.abs(f.leaning)})`; ctx.fillRect(p.x - 6, p.y - 6, 12, 12); });
+  const L = w.leader; if (!['gone', 'captured'].includes(L.state)) { const p = toS(L.pos); ctx.strokeStyle = '#ff00ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, 7); ctx.stroke(); text('TRUE Z ' + L.state, p.x, p.y - 16, 11, '#ff66ff'); }
+  w.cell.spotters.forEach(s => { const p = toS(s.pos); ctx.strokeStyle = '#ff66ff'; ctx.strokeRect(p.x - 4, p.y - 4, 8, 8); });
+  if (w.cell.ied) { const p = toS(w.cell.ied.pos); text('TRUE IED', p.x, p.y, 11, '#ff66ff'); }
+  st.pls.forEach(pl => { if (pl.mission) { const p = toS(pl.pos); ctx.fillStyle = '#ff66ff'; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); } });
+}
+function drawFlash() {
+  const f = st.hq.flash; if (!f || st.t - f.t > 20) return;
+  ctx.fillStyle = 'rgba(30,18,6,0.92)'; ctx.fillRect(10, 10, MAPW - 20, 38); ctx.strokeStyle = COL.orange; ctx.lineWidth = 2; ctx.strokeRect(10, 10, MAPW - 20, 38);
+  const s = f.msg.length > 100 ? f.msg.slice(0, 98) + '…' : f.msg;
+  text('STAFF: ' + s, 20, 29, 14, '#ffd2a8', 'left');
+}
+
+// =========================================================================================
+// THE PANEL (DOM): clock, decisions, log, status, intel, reporting requirements, task form
+// =========================================================================================
+const panel = document.getElementById('panel'), form = document.getElementById('form');
+let panelDirty = true;
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function rebuildPanel() {
+  panelDirty = false;
+  if (!st) return;
+  const left = tune.deadlineHours * 60 - st.t;
+  const sp = ['II', '1', '2', '3', '4'].map((l, i) => `<button data-spd="${i}" class="${st.speed === i ? 'on' : ''}">${i ? '▸'.repeat(Math.min(i, 3)) + (i === 4 ? '▸' : '') : '❚❚'}</button>`).join('');
+  let html = `<div class="hdr"><span class="dtg">${dtg(st.t)}</span><span class="ddl">${isNight(st.t) ? 'night' : 'day'} · deadline in ${Math.floor(left / 60)}h ${String(left % 60).padStart(2, '0')}m</span><span class="spd" style="margin-left:auto">${sp}</span></div>`;
+  html += `<div id="dec">${st.hq.dec.map(d => `<div class="card"><h4>${esc(d.title)}</h4>${d.body.map(b => `<p>${b}</p>`).join('')}<div class="row">${d.options.map((o, i) => `<button class="btn" data-dec="${d.id}" data-opt="${i}">${esc(o.label)}</button>`).join('')}</div></div>`).join('')}</div>`;
+  html += `<div class="tabs">${['log', 'status', 'intel', 'ccir'].map(t => `<button data-tab="${t}" class="${st.tab === t ? 'on' : ''}">${{ log: 'Radio & duty log', status: 'Status', intel: 'Target file', ccir: 'Reporting reqs' }[t]}</button>`).join('')}</div><div id="body">`;
+  if (st.tab === 'log') html += st.hq.log.slice(0, 80).map(e => `<div class="log ${e.cls}"><b>${dtg(e.t)} ${esc(e.from)}</b>: ${esc(e.txt)}</div>`).join('');
+  if (st.tab === 'status') {
+    html += st.pls.map(pl => { const ok = pl.soldiers.filter(s => s.state === 'ok').length; const m = pl.mission;
+      const job = pl.job === 'security' ? 'Outpost security' : m ? `${TYPES[m.type].label}${m.cid ? ' (cmpd ' + m.cid + ')' : ''}: ${{ planning: 'planning', backbrief: 'back-brief ready', approved: 'waiting to SP ' + dtg(m.dep), out: 'out', obj: 'on objective', back: 'returning' }[m.stage] || m.stage}` : 'At COP, resting';
+      return `<div class="st"><h5>${pl.name}: ${pl.pl} <span class="muted">(${pl.trait})</span></h5><p>${job}</p><p>Strength ${ok}/28 · fatigue ${Math.round(pl.fatigue)}</p><div class="bar"><i style="width:${pl.fatigue}%;background:${pl.fatigue > tune.tiredAt ? '#b0603a' : '#6f8f6a'}"></i></div>${pl.job === 'cop' && !pl.swapAt ? `<button class="btn" data-guard="${pl.id}">Take over outpost security</button>` : ''}</div>`; }).join('');
+    const dets = st.detainees.map(d => { const p = st.w.people[d.id]; return `<p>${esc(p.name)}: ${d.done ? 'questioned' : 'questioning, ' + Math.round(d.q / 60) + ' h'} ${d.released ? '(released)' : `<button class="btn" data-rel="${d.id}">Release</button>`}</p>`; }).join('');
+    html += `<div class="st"><h5>Detention cell</h5>${dets || '<p class="muted">No detainees.</p>'}</div>`;
+    const s = st.hq.stats;
+    html += `<div class="st"><h5>Company</h5><p>Own casualties: ${s.cas} WIA, ${s.kia} KIA · Civilian casualties reported: ${s.civcas} · Caches seized: ${s.caches}</p></div>`;
+  }
+  if (st.tab === 'intel') {
+    html += `<div class="st"><h5>Target: Qari ZAHID</h5><p>About 40, beard, limp in the left leg. Outsider; leads the cell in this village. Moves with 2 escorts.</p><p class="muted">Leads below are reports, not facts. Source and age matter.</p></div>`;
+    html += st.hq.leads.map(l => `<div class="log"><b>${dtg(l.t)}</b> [${esc(l.src)}] ${esc(l.txt)} ${l.cid ? `<button class="btn" data-selc="${l.cid}">show</button>` : ''}</div>`).join('') || '<p class="muted">No leads yet.</p>';
+  }
+  if (st.tab === 'ccir') {
+    html += `<p class="muted">The staff stop the clock (slow to real time) when one of these comes in.</p>` + Object.entries({ contact: 'Troops in contact', casualty: 'Friendly casualties', target: 'Anything on ZAHID', tip: 'Tips from the population', backbrief: 'Back-brief ready', debrief: 'Patrol debrief', hostile: 'Hostile or suspicious sighting', detainee: 'Questioning result' }).map(([k, v]) => `<p><label><input type="checkbox" data-ccir="${k}" ${st.ccir[k] ? 'checked' : ''}> ${v}</label></p>`).join('');
+  }
+  html += `</div><div class="foot"><button class="btn" data-new="1">New task (N)</button></div>`;
+  panel.innerHTML = html;
+}
+panel.addEventListener('click', e => {
+  const b = e.target.closest('[data-spd],[data-dec],[data-tab],[data-guard],[data-rel],[data-selc],[data-new]'); if (!b) return;
+  if (b.dataset.spd) st.speed = +b.dataset.spd;
+  if (b.dataset.tab) st.tab = b.dataset.tab;
+  if (b.dataset.dec) { const d = st.hq.dec.find(x => x.id === +b.dataset.dec); if (d) { closeDecision(d); d.options[+b.dataset.opt].fn(); } }
+  if (b.dataset.guard) { const pl = st.pls.find(p => p.id === b.dataset.guard); pl.swapAt = st.t + 30; hqLog('CO', `${pl.name} to take over outpost security.`); }
+  if (b.dataset.rel) { const d = st.detainees.find(x => x.id === b.dataset.rel); d.released = true; d.done = true; const p = st.w.people[d.id]; p.status = 'home'; p.history.push({ t: st.t, what: 'released from the outpost' }); if (p.role !== 'fighter') lean(st.w.fam(p.fam), 0.06, `${p.name} was released`); else { st.w.cell.fighters.includes(d.id); } st.hq.stats.released++; hqLog('CO', `Released ${p.name}.`); }
+  if (b.dataset.selc) { st.sel = +b.dataset.selc; const f = st.w.fam(st.sel); st.cam.x = f.pos.x; st.cam.y = f.pos.y; }
+  if (b.dataset.new) openForm();
+  panelDirty = true;
+});
+panel.addEventListener('change', e => { if (e.target.dataset.ccir) st.ccir[e.target.dataset.ccir] = e.target.checked; });
+
+function openForm(cid) {
+  const avail = st.pls.filter(p => p.job === 'cop' && !p.mission);
+  st.form = { type: 'patrol', pl: avail[0] ? avail[0].id : null, cid: cid || st.sel || null, roe: 'standard', timing: 'asap', nltH: 6, entry: 'soft' };
+  drawForm();
+}
+function drawForm() {
+  const f = st.form; if (!f) { form.classList.remove('on'); return; }
+  const avail = st.pls.filter(p => p.job === 'cop' && !p.mission);
+  const opt = (key, val, label) => `<button class="btn ${f[key] === val ? 'on' : ''}" data-k="${key}" data-v="${val}">${label}</button>`;
+  const T = TYPES[f.type];
+  let h = `<h3>Task a platoon</h3><p class="muted">You give the mission, intent and limits. The platoon leader plans the how and back-briefs you.</p>`;
+  h += `<div class="grp"><div class="lbl">Mission</div><div class="opts">${Object.entries(TYPES).map(([k, v]) => opt('type', k, v.label)).join('')}</div></div>`;
+  h += `<div class="grp"><div class="lbl">Platoon</div><div class="opts">${avail.map(p => opt('pl', p.id, `${p.name} (fatigue ${Math.round(p.fatigue)})`)).join('') || '<span class="muted">No platoon free. One must hold the outpost.</span>'}</div></div>`;
+  if (T.needsTarget) h += `<div class="grp"><div class="lbl">Objective</div><div class="opts"><select data-sel="cid"><option value="">click a compound on the map, or pick</option>${st.w.families.map(x => `<option value="${x.cid}" ${f.cid === x.cid ? 'selected' : ''}>Compound ${x.cid}${x.isElder ? ' (malik)' : ''}</option>`).join('')}</select></div></div>`;
+  h += `<div class="grp"><div class="lbl">Intent</div><div class="intent">${T.intent(f.cid || '?')}</div></div>`;
+  h += `<div class="grp"><div class="lbl">Rules of engagement</div><div class="opts">${opt('roe', 'standard', 'Standard')}${opt('roe', 'restrictive', 'Restrictive: PID before return fire')}</div></div>`;
+  if (f.type === 'search') h += `<div class="grp"><div class="lbl">Entry</div><div class="opts">${opt('entry', 'soft', 'Soft knock')}${opt('entry', 'forced', 'Forced entry authorised')}</div></div>`;
+  if (f.type !== 'raid') h += `<div class="grp"><div class="lbl">Timing</div><div class="opts">${opt('timing', 'asap', 'When ready')}${opt('timing', 'dark', 'After dark')}${opt('timing', 'light', 'At first light')}</div></div>`;
+  h += `<div class="grp"><div class="lbl">Back no later than</div><div class="opts">${[4, 6, 10, 14].map(n => opt('nltH', n, `+${n} h`)).join('')}</div></div>`;
+  const ok = f.pl && (!T.needsTarget || f.cid);
+  h += `<div class="grp opts"><button class="btn" data-go="1" ${ok ? '' : 'disabled'}>Issue the task</button><button class="btn" data-x="1">Close</button></div>`;
+  form.innerHTML = h; form.classList.add('on');
+}
+form.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.k) { const v = b.dataset.v; st.form[b.dataset.k] = isNaN(+v) ? v : (b.dataset.k === 'pl' ? v : +v); }
+  if (b.dataset.x) st.form = null;
+  if (b.dataset.go && st.form.pl) { newMission(st.form); st.form = null; }
+  drawForm();
+});
+form.addEventListener('change', e => { if (e.target.dataset.sel) { st.form.cid = +e.target.value || null; st.sel = st.form.cid; drawForm(); } });
+
+// Map: click a compound, drag to pan, wheel to zoom
+let drag = null;
+canvas.addEventListener('pointerdown', e => { const r = canvas.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H; if (scene !== 'play' && scene !== 'pause') { if (scene === 'title') { reset(); scene = 'play'; } return; } if (x > MAPW) return; drag = { x, y, cx: st.cam.x, cy: st.cam.y, moved: false }; });
+addEventListener('pointermove', e => { if (!drag) return; const r = canvas.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H; if (Math.abs(x - drag.x) + Math.abs(y - drag.y) > 4) drag.moved = true; st.cam.x = drag.cx - (x - drag.x) / st.cam.s; st.cam.y = drag.cy - (y - drag.y) / st.cam.s; });
+addEventListener('pointerup', e => { if (drag && !drag.moved) { const wp = toW(drag.x, drag.y); const f = st.w.families.find(f => dist(f.pos, wp) < 60 / Math.max(0.2, st.cam.s / 0.2)); st.sel = f ? f.cid : null; if (st.form && f) { st.form.cid = f.cid; drawForm(); } } drag = null; });
+canvas.addEventListener('wheel', e => { e.preventDefault(); const r = canvas.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H; if (x > MAPW) return; const before = toW(x, y); st.cam.s = clamp(st.cam.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 0.12, 0.8); const after = toW(x, y); st.cam.x += before.x - after.x; st.cam.y += before.y - after.y; }, { passive: false });
+
+function selectedCard() {
+  if (!st.sel) return;
+  const f = st.w.fam(st.sel), n = st.hq.notes[f.cid], leads = st.hq.leads.filter(l => l.cid === f.cid);
+  ctx.fillStyle = 'rgba(14,20,17,0.94)'; ctx.fillRect(12, H - 118, 330, 88); ctx.strokeStyle = '#6c7f70'; ctx.lineWidth = 1; ctx.strokeRect(12, H - 118, 330, 88);
+  text(`Compound ${f.cid}: ${f.head}'s family${f.isElder ? ' (the malik)' : ''}`, 22, H - 102, 14, '#e6ecd9', 'left');
+  text(n ? `Last debrief ${dtg(n.t)}: ${n.mood === '+' ? 'welcoming' : n.mood === '-' ? 'hostile' : 'neutral'}` : 'No debrief yet on this family.', 22, H - 80, 13, COL.text, 'left');
+  text(`${leads.length} lead(s) on file mention this compound.`, 22, H - 60, 13, COL.text, 'left');
+  text('N: task a platoon here', 22, H - 41, 12, '#7f8c7a', 'left');
+}
+
+// ---- Scenes ---------------------------------------------------------------------------
+let scene;
+const scenes = {
+  figures: {
+    update(dt) {},
+    draw() {
+      clear(COL.board); panel.classList.remove('on');
+      text('Symbols on the map board', W / 2, 40, 26, '#e6ecd9');
+      const items = [['Friendly infantry platoon', (x, y) => symFriendly(x, y, '')], ['Platoon, report ageing', (x, y) => symFriendly(x, y, '', 0.6, true)], ['Hostile armed group', (x, y) => symHostile(x, y, '')], ['Unknown person', (x, y) => symUnknown(x, y, '')], ['Possible target (ZAHID)', (x, y) => symTarget(x, y, '')], ['IED', (x, y) => symIED(x, y, '')], ['Weapons cache', (x, y) => symCache(x, y, '')], ['Compound', (x, y) => symCompound(x, y, 7, false)], ['Combat outpost', (x, y) => symCOP(x, y)], ['Mosque', (x, y) => symMosque(x, y)]];
+      items.forEach(([n, f], i) => { const x = 140 + (i % 5) * 250, y = 180 + Math.floor(i / 5) * 220; f(x, y); text(n, x, y + 62, 15, COL.text); });
+    },
+  },
+  title: {
+    update() { if (pressed('Enter') || pressed('Space')) { reset(); scene = 'play'; } },
+    draw() {
+      clear('#0a0e0b'); panel.classList.remove('on'); form.classList.remove('on');
+      text(TITLE, W / 2, 150, 60, '#e6ecd9', 'center', FONT);
+      text('COP Kestrel · company command post · 1800, day 1', W / 2, 210, 20, '#a9b39c');
+      const lines = ['Battalion wants Qari ZAHID, the cell leader, detained within 48 hours. He is somewhere in the village.', 'You command three platoons. One must always hold the outpost. Platoon leaders plan their own missions;', 'you give the mission, intent and limits, and approve their back-briefs.', 'The map board shows only what has been reported to you, and reports age. The cell watches you too.'];
+      lines.forEach((l, i) => text(l, W / 2, 280 + i * 30, 17, '#c9d4c2'));
+      CONTROLS.forEach((c, i) => text(c, W / 2, 430 + i * 28, 16, '#8f9c88'));
+      text('Enter or click to take the watch', W / 2, H - 60, 24, '#ffffff');
+      symFriendly(W / 2 - 300, 150, '', 1); symHostile(W / 2 + 300, 150, '', 1);
+    },
+  },
+  play: {
+    update(dt) {
+      if (pressed('Space') || pressed('KeyP')) st.speed = st.speed ? 0 : (st.lastSpeed || 2);
+      for (let i = 1; i <= 4; i++) if (pressed('Digit' + i)) st.speed = i;
+      if (pressed('KeyN')) openForm();
+      if (pressed('Escape')) { st.form = null; drawForm(); }
+      if (pressed('ArrowLeft')) st.cam.x -= 200; if (pressed('ArrowRight')) st.cam.x += 200; if (pressed('ArrowUp')) st.cam.y -= 200; if (pressed('ArrowDown')) st.cam.y += 200;
+      if (st.speed) st.lastSpeed = st.speed;
+      const rate = st.speed ? tune['speed' + st.speed] : 0;
+      st.acc += rate * dt;
+      let n = 0;
+      while (st.acc >= 1 && n < 200 && scene === 'play') { st.acc -= 1; simMinute(); n++; }
+      if (n) panelDirty = true;
+    },
+    draw() {
+      clear('#0a0e0b'); drawBoard(); drawFlash(); selectedCard();
+      if (st.speed === 0) text('PAUSED · Space to resume · 1-4 speed', MAPW / 2, H - 20, 14, '#ffd2a8');
+      panel.classList.add('on'); if (panelDirty) rebuildPanel();
+    },
+  },
+  pause: {
+    update() { scene = 'play'; st.speed = 0; },
+    draw() { scenes.play.draw(); },
+  },
+  results: {
+    update() { if (pressed('Enter') || pressed('KeyR')) { reset(); scene = 'play'; } },
+    draw() {
+      drawBoard(); panel.classList.remove('on'); form.classList.remove('on');
+      ctx.fillStyle = 'rgba(8,12,10,0.94)'; ctx.fillRect(140, 60, 1000, 600); ctx.strokeStyle = '#6c7f70'; ctx.strokeRect(140, 60, 1000, 600);
+      text(st.over === 'win' ? 'ZAHID DETAINED' : 'DEADLINE PASSED', W / 2, 105, 40, st.over === 'win' ? '#9fd39a' : '#ec8a80');
+      text(st.gained, W / 2, 150, 18, '#e6ecd9');
+      const s = st.hq.stats;
+      const lines = [`Debrief: what your company learned (${dtg(st.t)})`, `Own casualties ${s.cas} WIA, ${s.kia} KIA · civilian casualties reported ${s.civcas} · detainees ${s.detained} (released ${s.released}) · caches seized ${s.caches}`,
+        `Leads on file: ${st.hq.leads.length} · compounds with a debrief: ${Object.keys(st.hq.notes).length} of ${st.w.families.length}`, ...st.battalion.map(b => 'Battalion: ' + b), '', 'Key reports:'];
+      const key = st.hq.log.filter(e => e.cls === 'hot').slice(0, 12).reverse();
+      lines.forEach((l, i) => text(l, 170, 200 + i * 24, i === 0 ? 17 : 14, i === 0 ? '#e6ecd9' : '#c9d4c2', 'left'));
+      key.forEach((e, i) => { const t = `${dtg(e.t)} ${e.from}: ${e.txt}`; text(t.length > 112 ? t.slice(0, 110) + '…' : t, 170, 200 + (lines.length + i) * 22, 13, '#d8c8b0', 'left', "'Courier New', monospace"); });
+      text('Enter: take the watch again', W / 2, 635, 18, '#ffffff');
+    },
+  },
+};
+// ---- Loop: fixed step, frame time clamped ---------------------------------------------
+function step() {
+  if (pressed('KeyM')) { setMuted(!muted); hit.delete('KeyM'); }
+  scenes[scene].update(STEP); hit.clear();
+}
+let last, acc = 0, ALPHA = 1; // ALPHA: how far the frame is between the last two steps
+function tick() {
+  const now = clock.now();
+  acc += Math.min(now - last, 0.25); last = now; // a stall never fast-forwards the game
+  while (acc >= STEP) { step(); acc -= STEP; }
+  ALPHA = acc / STEP; // draw between steps, so the view never judders
+  drawFrame();
+}
+function drawFrame() { scenes[scene].draw(); }
+function frame() { tick(); requestAnimationFrame(frame); }
+// A headless browser on a time budget runs timers but almost no animation frames: a timer
+// ticks when no frame has come for 100 ms on a visible page; a hidden tab stays paused.
+function timer() { if (document.visibilityState === 'visible' && clock.now() - last > 0.1) tick(); }
+
+// ---- What a check can read and drive (?manual=1 stops the loop; players never see it) ----
+window.game = {
+  get scene() { return scene; },
+  get state() { return state; },
+  press(code) { hit.add(code); },
+  hold(code, on) { on ? down.add(code) : down.delete(code); },
+  get events() { return events; }, // the loop steps; a check empties it
+  step(n = 1, draw = true, alpha = 1) {
+    for (let i = 0; i < n; i++) step();
+    if (draw) { ALPHA = alpha; drawFrame(); }
+  },
+};
+
+reset();
+scene = params.get('scene') || 'title';
+last = clock.now();
+if (params.get('manual') === '1') drawFrame();
+else { requestAnimationFrame(frame); setInterval(timer, 50); }
+</script>
+</body>
+</html>

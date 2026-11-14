@@ -1,0 +1,178 @@
+# The one-shot's small check (check-run/1).
+# Written by one-shot-check.sh --record: the results are /prototype's reading of
+# evidence/self-check.tsv; never edited by hand.
+kind: check-run/1
+engine: web
+browser: "HeadlessChrome/153.0.0.0"
+time: "2026-11-14 05:03:51"
+checks:
+  - id: boots
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: shot
+    result: pass
+    evidence:
+      - "evidence/play.png"
+  - id: outlines
+    result: pass
+    evidence:
+      - "evidence/figures.png"
+  - id: brief-words
+    result: pass
+    evidence:
+      - "evidence/brief-words.tsv"
+  - id: emoji
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: nearest-game
+    result: pass
+    evidence:
+      - "evidence/nearest-game.txt"
+brief_checklist:
+  - id: L1
+    result: fail
+    why: missing
+    evidence: "index.html:798"
+    item: "Look: a company command post at night. A dark map board with MIL-STD-2525 frames (blue rectangle friendly, red diamond hostile, yellow unknown), grease-pencil control measures, report marks that fade and dash with age, last-known-position ghosts with a time label, uncertainty ellipses. Beside it the radio and duty log in standard report formats, a platoon status board, and the intelligence cell's target file. Orange only for \"a decision is waiting on you\". Every figure drawn as a symbol, no emoji, no plain circles. *(inferred (strong))*"
+  - id: L2
+    result: pass
+    evidence: "evidence/play.png"
+    item: "References: Command: Modern Operations (fog, sensor-driven picture); Football Manager (indirect control, people you come to know). *(inferred (strong))*"
+  - id: L3
+    result: pass
+    evidence: "evidence/play.png"
+    item: "View: 2D · Camera: top-down map board with pan and zoom. *(provisional)*"
+  - id: F1
+    result: pass
+    evidence: "index.html:307"
+    item: "The village: about 20 families in compounds, each with routines and a hidden leaning with recorded causes"
+  - id: F2
+    result: pass
+    evidence: "index.html:388"
+    item: "The cell: the leader, a handful of fighters, a cache, rooftop spotters, taxing the road, intimidating informants, acting only on what it has seen or been told"
+  - id: F3
+    result: pass
+    evidence: "index.html:233"
+    item: "Your company: three platoons with soldiers, fatigue and a rotation (outpost security, available, resting)"
+  - id: F4
+    result: pass
+    evidence: "index.html:546"
+    item: "Tasking by mission, intent and limits, with the platoon leader's back-brief to approve or return: presence patrol, compound search, meeting with an elder, raid"
+  - id: F5
+    result: pass
+    evidence: "index.html:285"
+    item: "Reports from the field: delayed and partial spot reports, debriefs on return, tips from families who lean your way"
+  - id: F6
+    result: pass
+    evidence: "evidence/play.png"
+    item: "The command post: map board updated only from reports, radio and duty log, status board, target file"
+  - id: F7
+    result: pass
+    evidence: "index.html:272"
+    item: "Standing reporting requirements and time acceleration that the staff interrupt"
+  - id: F8
+    result: pass
+    evidence: "index.html:1064"
+    item: "Debrief at the end: what your side learned, and when"
+  - id: S1
+    result: pass
+    evidence: "index.html:442"
+    item: "two combat economies (recruiting, resupply, disruption) · thin stand-in *(guessed)*"
+  - id: S2
+    result: pass
+    evidence: "index.html:314"
+    item: "contested population · in the slice"
+  - id: S3
+    result: pass
+    evidence: "index.html:365"
+    item: "separate knowledge for each side · in the slice"
+  - id: S4
+    result: pass
+    evidence: "index.html:503"
+    item: "mission command with back-briefs · in the slice"
+  - id: S5
+    result: pass
+    evidence: "index.html:272"
+    item: "reporting requirements and time acceleration · in the slice"
+  - id: S6
+    result: pass
+    evidence: "index.html:653"
+    item: "intelligence chain to a target · in the slice"
+  - id: S7
+    result: pass
+    evidence: "index.html:737"
+    item: "detention and questioning · thin stand-in *(guessed)*"
+  - id: S8
+    result: pass
+    evidence: "index.html:685"
+    item: "casualty evacuation by ground · thin stand-in *(guessed)*"
+  - id: M1
+    result: pass
+    evidence: "evidence/play.png"
+    item: "The ops room at 1800."
+  - id: M2
+    result: pass
+    evidence: "index.html:258"
+    item: "The duty log shows battalion's order: capture the cell leader, call sign unknown, believed in the village, within 48 hours."
+  - id: M3
+    result: pass
+    evidence: "evidence/play.png"
+    item: "The map board shows your outpost, the village compounds and the road; the status board shows three platoons, one on outpost security."
+  - id: M4
+    result: pass
+    evidence: "index.html:259"
+    item: "The executive officer's note suggests a presence patrol and a meeting with the village elder."
+  - id: M5
+    result: pass
+    evidence: "index.html:966"
+    item: "You task 2nd Platoon: mission, intent, limits."
+  - id: M6
+    result: pass
+    evidence: "index.html:546"
+    item: "A few minutes of game time later the platoon leader back-briefs his route, timing and actions on contact; you approve."
+  - id: M7
+    result: pass
+    evidence: "index.html:893"
+    item: "On the map, the platoon symbol moves only as its position reports come in."
+  - id: M8
+    result: not_run
+    mark: not assessed
+    why: "a first spot report depends on what the patrol meets; not every seed gives one in the first hour"
+    item: "An hour later a spot report arrives, and the first marks appear on the board."
+  - id: M9
+    result: pass
+    evidence: "evidence/play.png"
+    item: "*(guessed)*"
+  - id: C1
+    result: pass
+    evidence: "index.html:372"
+    item: "Within the first few in-game hours, a spotter on a rooftop reports your patrol to the cell, so the leader avoids where you are."
+  - id: C2
+    result: pass
+    evidence: "index.html:644"
+    item: "A heavy-handed search or a civilian casualty turns families against you, drying up tips."
+  - id: C3
+    result: pass
+    evidence: "index.html:614"
+    item: "Tired platoons make mistakes."
+  - id: C4
+    result: pass
+    evidence: "index.html:400"
+    item: "He escapes if spooked into leaving the area or when 48 hours run out; the session ends with a debrief built only from what your side learned."
+  - id: C5
+    result: not_run
+    mark: not assessed
+    why: "later sessions are out of this slice"
+    item: "Later sessions grow the area and the deadline."
+  - id: C6
+    result: pass
+    evidence: "evidence/play.png"
+    item: "*(provisional)*"
+measures:
+  - id: step-time
+    value: 0.900
+    unit: ms
+    by: browser
+    detail: "mean 0.009 ms, slowest 0.900 ms, 216 steps"

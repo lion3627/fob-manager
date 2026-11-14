@@ -1,0 +1,34 @@
+L1	missing	index.html:798	2525 frames, grease-pencil routes and lead rings, ageing marks with time labels, log, status, target file and orange decision cards are built; uncertainty ellipses are not
+L2	pass	evidence/play.png	fog: board shows only reported positions; indirect control through back-briefs; named soldiers and platoon leaders
+L3	pass	evidence/play.png	2D top-down board, drag to pan, wheel to zoom (index.html:1003)
+F1	pass	index.html:307	20 compounds, families with members, leaning with a causes list, gossip each morning
+F2	pass	index.html:388	leader, fighters, cache, rooftop spotters, road tax, night letters, all driven by the cell's own sightings (cellLearn)
+F3	pass	index.html:233	three platoons of 28 named soldiers, fatigue, security rotation button
+F4	pass	index.html:546	task form with mission, intent, ROE, timing, NLT; back-brief card with approve, another route, after dark, extend, cancel
+F5	pass	index.html:285	radio delay, held in dead ground, spot reports, debriefs on return, tips
+F6	pass	evidence/play.png	map board from st.hq only; log, status, target file tabs
+F7	pass	index.html:272	reporting requirements tab; staff drop speed to real time and flash
+F8	pass	index.html:1064	results screen built from the command post's log and stats, battalion line
+S1	pass	index.html:442	cell money from tax, recruiting costs money, cache explosives feed devices, seizure stops them
+S2	pass	index.html:314	leaning decides tips or deception; spotters and hostile families report patrols
+S3	pass	index.html:365	cell kb separate from truth and from st.hq
+S4	pass	index.html:503	platoon leader picks route by pattern, threat and trait, and back-briefs
+S5	pass	index.html:272	four speeds, interrupts by requirement
+S6	pass	index.html:653	tips and sightings become leads; raid or street PID captures
+S7	pass	index.html:737	six hours of questioning, may give a lead; release button
+S8	pass	index.html:685	casualties end the mission and the platoon returns by ground
+M1	pass	evidence/play.png	starts 1800 day 1
+M2	pass	index.html:258	battalion order in the duty log
+M3	pass	evidence/play.png	outpost, compounds, road; status shows 1st Platoon on security
+M4	pass	index.html:259	XO note
+M5	pass	index.html:966	task form
+M6	pass	index.html:546	back-brief after the planning time
+M7	pass	index.html:893	symbol drawn at the last position report
+M8	not_assessed	-	a first spot report depends on what the patrol meets; not every seed gives one in the first hour
+M9	pass	evidence/play.png	marker line
+C1	pass	index.html:372	spotter sightings make him relocate
+C2	pass	index.html:644	searches and civilian casualties cut leaning, which cuts tips
+C3	pass	index.html:614	tired platoons handle families roughly, see less, spot fewer devices
+C4	pass	index.html:400	threat makes him leave; deadline ends the run; debrief from the command post's records
+C5	not_assessed	-	later sessions are out of this slice
+C6	pass	evidence/play.png	marker line

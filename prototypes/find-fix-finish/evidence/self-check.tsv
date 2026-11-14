@@ -1,0 +1,114 @@
+time	2026-11-14 05:03:51
+keep	lines	0	pinned	0
+checklist	L1	unlisted	-	Look: a company command post at night. A dark map board with MIL-STD-2525 frames (blue rectangle friendly, red diamond hostile, yellow unknown), grease-pencil control measures, report marks that fade and dash with age, last-known-position ghosts with a time label, uncertainty ellipses. Beside it the radio and duty log in standard report formats, a platoon status board, and the intelligence cell's target file. Orange only for "a decision is waiting on you". Every figure drawn as a symbol, no emoji, no plain circles. *(inferred (strong))*	
+checklist	L2	unlisted	-	References: Command: Modern Operations (fog, sensor-driven picture); Football Manager (indirect control, people you come to know). *(inferred (strong))*	
+checklist	L3	unlisted	-	View: 2D · Camera: top-down map board with pan and zoom. *(provisional)*	
+checklist	F1	unlisted	-	The village: about 20 families in compounds, each with routines and a hidden leaning with recorded causes	
+checklist	F2	unlisted	-	The cell: the leader, a handful of fighters, a cache, rooftop spotters, taxing the road, intimidating informants, acting only on what it has seen or been told	
+checklist	F3	unlisted	-	Your company: three platoons with soldiers, fatigue and a rotation (outpost security, available, resting)	
+checklist	F4	unlisted	-	Tasking by mission, intent and limits, with the platoon leader's back-brief to approve or return: presence patrol, compound search, meeting with an elder, raid	
+checklist	F5	unlisted	-	Reports from the field: delayed and partial spot reports, debriefs on return, tips from families who lean your way	
+checklist	F6	unlisted	-	The command post: map board updated only from reports, radio and duty log, status board, target file	
+checklist	F7	unlisted	-	Standing reporting requirements and time acceleration that the staff interrupt	
+checklist	F8	unlisted	-	Debrief at the end: what your side learned, and when	
+checklist	S1	unlisted	-	two combat economies (recruiting, resupply, disruption) · thin stand-in *(guessed)*	
+checklist	S2	unlisted	-	contested population · in the slice	
+checklist	S3	unlisted	-	separate knowledge for each side · in the slice	
+checklist	S4	unlisted	-	mission command with back-briefs · in the slice	
+checklist	S5	unlisted	-	reporting requirements and time acceleration · in the slice	
+checklist	S6	unlisted	-	intelligence chain to a target · in the slice	
+checklist	S7	unlisted	-	detention and questioning · thin stand-in *(guessed)*	
+checklist	S8	unlisted	-	casualty evacuation by ground · thin stand-in *(guessed)*	
+checklist	M1	unlisted	-	The ops room at 1800.	
+checklist	M2	unlisted	-	The duty log shows battalion's order: capture the cell leader, call sign unknown, believed in the village, within 48 hours.	
+checklist	M3	unlisted	-	The map board shows your outpost, the village compounds and the road; the status board shows three platoons, one on outpost security.	
+checklist	M4	unlisted	-	The executive officer's note suggests a presence patrol and a meeting with the village elder.	
+checklist	M5	unlisted	-	You task 2nd Platoon: mission, intent, limits.	
+checklist	M6	unlisted	-	A few minutes of game time later the platoon leader back-briefs his route, timing and actions on contact; you approve.	
+checklist	M7	unlisted	-	On the map, the platoon symbol moves only as its position reports come in.	
+checklist	M8	unlisted	-	An hour later a spot report arrives, and the first marks appear on the board.	
+checklist	M9	unlisted	-	*(guessed)*	
+checklist	C1	unlisted	-	Within the first few in-game hours, a spotter on a rooftop reports your patrol to the cell, so the leader avoids where you are.	
+checklist	C2	unlisted	-	A heavy-handed search or a civilian casualty turns families against you, drying up tips.	
+checklist	C3	unlisted	-	Tired platoons make mistakes.	
+checklist	C4	unlisted	-	He escapes if spooked into leaving the area or when 48 hours run out; the session ends with a debrief built only from what your side learned.	
+checklist	C5	unlisted	-	Later sessions grow the area and the deadline.	
+checklist	C6	unlisted	-	*(provisional)*	
+browser	HeadlessChrome/153.0.0.0
+scene	play	0	title
+scene	play	1	play
+digits	log	20px "Segoe UI", Roboto, Helvetica, Arial, sans-serif	proportional	4.785
+digits	log	17px "Segoe UI", Roboto, Helvetica, Arial, sans-serif	proportional	4.067
+digits	log	16px "Segoe UI", Roboto, Helvetica, Arial, sans-serif	proportional	3.828
+digits	log	10px "Segoe UI", Roboto, Helvetica, Arial, sans-serif	proportional	2.393
+digits	log	12px "Segoe UI", Roboto, Helvetica, Arial, sans-serif	proportional	2.871
+digits	log	11px "Segoe UI", Roboto, Helvetica, Arial, sans-serif	proportional	2.632
+measure	step-time	play	0.009	0.900	216
+lane	play	stop	3.6	136
+uncaught	play	0
+text	play	canvas	129,4,145,11	16.5	2.35	inside	040
+text	play	canvas	210,4,225,11	16.5	2.35	inside	045
+text	play	canvas	290,4,305,11	16.5	2.35	inside	050
+text	play	canvas	370,4,385,11	16.5	2.35	inside	055
+text	play	canvas	450,4,465,11	16.5	2.35	inside	060
+text	play	canvas	530,4,545,11	16.5	2.35	inside	065
+text	play	canvas	610,4,625,11	16.5	2.35	inside	070
+text	play	canvas	690,4,705,11	16.5	2.35	inside	075
+text	play	canvas	770,4,786,11	16.5	2.35	inside	080
+text	play	canvas	130,50,145,58	16.5	2.35	inside	070
+text	play	canvas	130,131,145,138	16.5	2.35	inside	075
+text	play	canvas	130,211,145,218	16.5	2.35	inside	080
+text	play	canvas	130,291,145,298	16.5	2.35	inside	085
+text	play	canvas	130,371,145,378	16.5	2.35	inside	090
+text	play	canvas	130,451,145,458	16.5	2.35	inside	095
+text	play	canvas	131,531,145,539	16.5	2.35	inside	100
+text	play	canvas	548,133,588,142	18.0	4.04	inside	Hill 1240
+text	play	canvas	435,188,455,196	16.5	5.51	inside	wadi
+text	play	canvas	397,183,440,189	16.5	4.91	inside	no comms
+text	play	canvas	178,316,243,324	18.0	6.15	inside	COP KESTREL
+text	play	canvas	529,284,562,292	16.5	7.94	inside	mosque
+text	play	canvas	485,274,490,281	18.0	7.94	inside	1
+text	play	canvas	490,248,495,255	18.0	7.94	inside	2
+text	play	canvas	494,288,500,296	18.0	7.11	inside	3
+text	play	canvas	510,358,516,366	18.0	6.37	inside	4
+text	play	canvas	533,321,537,329	18.0	6.37	inside	5
+text	play	canvas	533,238,539,246	18.0	7.94	inside	6
+text	play	canvas	526,272,546,279	16.5	11.39	inside	malik
+text	play	canvas	539,219,543,226	18.0	7.94	inside	7
+text	play	canvas	538,276,544,284	18.0	7.94	inside	8
+text	play	canvas	549,292,554,300	18.0	7.94	inside	9
+text	play	canvas	551,230,562,238	18.0	7.94	inside	10
+text	play	canvas	563,221,574,229	18.0	7.94	inside	11
+text	play	canvas	564,279,575,286	18.0	7.94	inside	12
+text	play	canvas	571,308,582,316	18.0	7.94	inside	13
+text	play	canvas	585,289,597,297	18.0	7.94	inside	14
+text	play	canvas	586,229,597,237	18.0	6.37	inside	15
+text	play	canvas	591,260,602,268	18.0	7.94	inside	16
+text	play	canvas	591,275,602,282	18.0	7.11	inside	17
+text	play	canvas	606,261,617,269	18.0	7.94	inside	18
+text	play	canvas	645,279,656,287	18.0	7.94	inside	19
+text	play	canvas	675,212,686,220	18.0	7.94	inside	20
+text	play	canvas	214,546,233,552	16.5	7.94	inside	1 km
+text	play	canvas	750,14,770,23	22.5	7.94	inside	N ↑
+text	play	html	794,6,861,25	18.7	15.41	inside	D1 1946
+text	play	html	867,9,1002,22	18.7	8.47	inside	night · deadline in 46h 14m
+text	play	html	1012,35,1029,47	22.5	10.74	inside	❚❚
+text	play	html	1044,35,1049,47	22.5	10.74	inside	▸
+text	play	html	1063,35,1074,47	22.5	10.74	inside	▸▸
+text	play	html	1088,35,1104,47	22.5	10.74	inside	▸▸▸
+text	play	html	1118,35,1139,47	22.5	11.95	inside	▸▸▸▸
+text	play	html	799,67,876,79	22.5	11.95	inside	Radio & duty log
+text	play	html	893,67,923,79	22.5	10.74	inside	Status
+text	play	html	941,67,986,79	22.5	10.74	inside	Target file
+text	play	html	1003,67,1072,79	22.5	10.74	inside	Reporting reqs
+text	play	html	794,91,856,103	22.5	15.41	inside	D1 1800 XO
+text	play	html	794,91,1144,160	22.5	12.14	inside	: Sir, 1st Platoon has the outpost. 2nd is rested; 3rd is ju
+text	play	html	794,167,856,179	22.5	15.41	inside	D1 1800 BN
+text	play	html	794,167,1144,236	22.5	11.08	inside	: FRAGO 14: Capture Qari ZAHID, cell leader: about 40, beard
+text	play	html	938,551,1002,563	24.3	10.74	inside	New task (N)
+screen	play	drawn
+responds	changed	4
+overlap	play	malik	8
+overlap	play	D1 1800 XO	: Sir, 1st Platoon has the outpost. 2nd is rested; 3rd is ju
+overlap	play	D1 1800 BN	: FRAGO 14: Capture Qari ZAHID, cell leader: about 40, beard
+shot	play	evidence/play.png
