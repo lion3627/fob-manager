@@ -120,7 +120,7 @@
 
   F.createOp = (seed, id) => {
     const S = F.SCENARIOS[id]; if (!S) throw new Error('No scenario ' + id);
-    const W = { v: 1, scn: id, seed, rs: seed | 0, t: S.start, nid: 1, map: valley(),
+    const W = { v: 1, scn: id, seed, rs: seed | 0, t: S.start, nid: 1, map: S.kind === 'compound' ? F.cqbMap() : valley(),
       stores: {}, vehicles: {}, soldiers: {}, units: {}, msgs: [], events: [], decisions: [], noise: [],
       ledger: { initial: {}, used: {}, lost: {}, expired: {}, why: {} },
       hq: { units: {}, contacts: [], log: [], logstat: null, cseq: 1, convoy: null, el: {}, hvt: null, secure: null },
@@ -138,6 +138,15 @@
     F.stock(W, st('parts', 'Parts cage', { kind: 'store', capKg: 500, accepts: ['PARTS'] }), 'PARTS', 2);
     F.stock(W, st('yard', 'Engineer yard', { kind: 'store', capKg: 5000, accepts: ['CL4'] }), 'CL4', 10);
     const tents = F.fobPos(W, 'tents'), mp = F.fobPos(W, 'motor');
+    if (S.kind === 'compound') {
+      W.op = { id, name: S.name, status: 'planning', plan: null, h: 0, obj: S.obj, called: {}, tLaunch: null, tEnd: null, outcome: null };
+      const hq = F.mkUnit(W, { id: 'hq', name: 'Command post', call: 'KESTREL', side: 'blue', kind: 'hq', pos: { x: fob.x, y: fob.y + 12 }, node: 'fob', task: 'command post' });
+      ['CDR', 'RTO'].forEach((r, k) => F.mkSoldier(W, hq, r, 'M4', { x: fob.x + k * 3, y: fob.y + 12 }));
+      F.cqbSetup(W, S);
+      for (const uid in W.units) { const u = W.units[uid]; if (u.side === 'blue') W.hq.units[uid] = { pos: { x: u.pos.x, y: u.pos.y }, t: W.t, src: 'fob', str: u.members.length, ammo: 100, status: u.task, cas: 0 }; }
+      F.ev(W, 'start', `${S.name}: planning. ${S.brief}`);
+      return W;
+    }
     S.force.forEach((f, fi) => {
       const u = F.mkUnit(W, { id: f.id, name: f.name, call: f.call, side: 'blue', kind: f.kind || 'element', pos: { x: tents.x, y: tents.y }, node: 'fob', task: 'preparing', opEl: true, tacsat: !!f.tacsat, codes: {}, det: [], net: {}, fire: 'hold' });
       f.roles.forEach((r, k) => F.mkSoldier(W, u, r[0], r[1], { x: tents.x + (k % 6) * 4 - 20 + fi * 26 - 30, y: tents.y + Math.floor(k / 6) * 4 }));
@@ -166,6 +175,7 @@
   F.opLegEnd = (W, leg) => leg.pts && leg.pts.length ? F.opPt(W, leg.pts[leg.pts.length - 1]) : leg.k === 'assault' ? W.op.obj : null;
   const resolveConds = (W, c) => (c || []).map(x => x.h != null ? { t: W.op.h + x.h, h: x.h } : Object.assign({}, x));
   function compile(W, id) {
+    if (W.op.kind === 'compound') return F.cqbCompile(W, id);
     const legs = W.op.plan.els[id], u = W.units[id], steps = [], call = u.call; let exfilAt = -1;
     const say = (text, extra) => steps.push(Object.assign({ k: 'say', text }, extra || {}));
     steps.push({ k: 'wait', until: W.op.plan.sp - (u.kind === 'mounted' ? 600 : 900) }, { k: 'prep', dur: u.kind === 'mounted' ? 600 : 900 });
@@ -192,11 +202,12 @@
   F.opCmd = {
     launch: W => {
       const O = W.op; if (O.status !== 'planning') return { ok: false, err: 'The operation is already under way.' };
+      if (O.kind === 'compound') { const e = F.cqbCheck(W); if (e) return { ok: false, err: e }; }
       if (O.plan.sp < W.t + 600) return { ok: false, err: 'The start point time is too close: the force needs at least ten minutes to get ready.' };
-      if (O.h < O.plan.sp + 1800) return { ok: false, err: 'H-hour must be at least thirty minutes after the start point time.' };
+      if (O.kind !== 'compound' && O.h < O.plan.sp + 1800) return { ok: false, err: 'H-hour must be at least thirty minutes after the start point time.' };
       for (const id in O.plan.els) { const u = W.units[id]; F.setPlan(W, u, compile(W, id), 'preparing for ' + O.name); u.codes = {}; }
       O.status = 'running'; O.tLaunch = W.t;
-      F.trace(W, 'CDR', `Approved the plan for ${O.name}`, `Start point ${F.clock(O.plan.sp)}, H-hour ${F.clock(O.h)}, vehicles to ${W.map.nodes[O.plan.hide].name}`);
+      F.trace(W, 'CDR', `Approved the plan for ${O.name}`, O.kind === 'compound' ? `Wheels up ${F.clock(O.plan.sp)}, ${F.INSERTS[O.plan.insert].name.toLowerCase()}` : `Start point ${F.clock(O.plan.sp)}, H-hour ${F.clock(O.h)}, vehicles to ${W.map.nodes[O.plan.hide].name}`);
       F.ev(W, 'op-launch', `${O.name} approved. Start point ${F.clock(O.plan.sp)}, H-hour ${F.clock(O.h)}.`); return { ok: true };
     },
     code: (W, code) => {
@@ -239,6 +250,7 @@
       if (c.t != null && W.t >= c.t) return 'time ' + F.clock(c.t);
       if (c.compromise && (u.con || (u.heard && u.heard >= s.t0))) return 'compromised';
       if (c.peer && u.net[c.peer + ':' + c.phase]) return `${W.units[c.peer].call} reporting ${c.phase}`;
+      if (c.all && c.all.every(id => !okN(W, W.units[id]) || u.net[id + ':' + c.phase])) return 'every team reporting ' + c.phase;
     }
     return null;
   }
@@ -272,7 +284,7 @@
   /* A report goes to the command post, and every element close enough on the same net hears it at once. */
   function say(W, u, prio, text, extra) {
     u.phase = extra.phase; F.report(W, u, 'CHECKIN', prio, text, extra);
-    for (const id in W.op.plan.els) { const p = W.units[id]; if (p === u || !okN(W, p)) continue; if (F.dist(p.pos, u.pos) <= 5000 && !F.blocked(W, p.pos, u.pos)) p.net[u.id + ':' + extra.phase] = W.t; }
+    for (const id in W.op.plan.els) { const p = W.units[id]; if (p === u || !okN(W, p)) continue; if (F.dist(p.pos, u.pos) <= 5000 && !F.blocked(W, p.pos, u.pos, true)) p.net[u.id + ':' + extra.phase] = W.t; }
   }
   F.opStep = (W, u, s, el, next) => {
     switch (s.k) {
@@ -311,17 +323,18 @@
         break;
       }
       case 'sse': u.phase = 'searching the objective'; capture(W, u); if (el >= s.dur) { const f = sseFind(W, u); say(W, u, 'F', f.text, { phase: 'search complete', hvt: f.hvt }); u.fire = 'hold'; next(); } break;
-      default: next();
+      default: if (!(F.cqbStep && F.cqbStep(W, u, s, el, next))) next();
     }
   };
   F.opRecv = (W, u, m) => {
     if (m.type === 'ORDER-CODE') { if (!u.codes[m.data.code]) u.codes[m.data.code] = W.t; }
-    else if (m.type === 'ORDER-ABORT') { u.codes.ABORT = W.t; if (u.riding || u.kind === 'mounted') return; if (u.con) u.ord = 'BREAK'; else if (!u.exfiling) F.opFallback(W, u, 'aborted by the command post'); }
+    else if (m.type === 'ORDER-ABORT') { u.codes.ABORT = W.t; if (u.riding || u.kind === 'mounted' || u.kind === 'air') return; if (u.con) u.ord = 'BREAK'; else if (!u.exfiling) F.opFallback(W, u, 'aborted by the command post'); }
   };
   /* Break contact, or abort: fall back to the rally point, then carry on with the exfiltration legs. */
   F.opFallback = (W, u, why) => {
     u.assaulting = false; u.holdPos = false; u.fire = 'hold'; u.cease = false; u.engR = null; u.observing = false;
-    if (u.kind === 'mounted') return;
+    if (u.kind === 'mounted' || u.kind === 'air') return;
+    u.spots = null; u.cqb = false;
     const all = compile(W, u.id), rest = u.exfilAt >= 0 ? all.slice(u.exfilAt) : [];
     const fall = (u.rally && F.dist(u.rally, u.pos) > 100 ? [{ k: 'walk', to: { x: u.rally.x, y: u.rally.y }, spd: 1.7, pace: 'rush' }] : []).concat(rest);
     F.setPlan(W, u, fall, 'falling back: ' + why); u.exfiling = true; u.phase = 'falling back';
@@ -340,7 +353,7 @@
     for (const id in O.plan.els) { const u = W.units[id]; if (W.noise && W.noise.some(n => n.u !== u.id && W.t - n.t < 6 && F.dist(n, u.pos) < 1500)) u.heard = W.t; }
     if (W.t % 30) return;
     const home = Object.keys(O.plan.els).every(id => { const u = W.units[id]; return !u.plan && (u.done || !okN(W, u)); });
-    if (home || W.t > O.h + 8 * H) { O.status = 'complete'; O.tEnd = W.t; O.outcome = F.opOutcome(W); F.ev(W, 'op-end', `${O.name} complete: ${O.outcome.summary}`); }
+    if (home || W.t > O.h + 8 * H) { O.status = 'complete'; O.tEnd = W.t; O.outcome = O.kind === 'compound' ? F.cqbOutcome(W) : F.opOutcome(W); F.ev(W, 'op-end', `${O.name} complete: ${O.outcome.summary}`); }
   };
   /* Ground truth, for the after-action review. */
   F.opOutcome = W => {

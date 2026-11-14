@@ -23,6 +23,8 @@
   function alert(W, u, why, cause) {
     if (u.alerted && why !== 'gunfire') return; const first = !u.alerted; u.alerted = W.t; u.observing = true;
     if (first || (why === 'gunfire' && W.t - (u.heardShots || -999) > 300)) F.ev(W, 'enemy-alert', `${u.name} alerted: ${why}`, { unit: u.id }, cause); if (why === 'gunfire') u.heardShots = W.t;
+    if (u.asleep && !u.readyAt) { u.readyAt = W.t + (why === 'gunfire' || why === 'explosion' || why === 'under fire' ? F.ri(W, 15, 45) : F.ri(W, 45, 120)); F.trace(W, u.name, 'Woken: reaching for weapons', why); }
+    if (u.role === 'hvt' && u.st === 'post' && !u.alt) { u.stay = true; return; }
     if (u.role === 'hvt' && u.st === 'post') {
       if (why === 'heard vehicles' && !F.ch(W, u.nerve == null ? 0.5 : u.nerve)) { F.trace(W, u.name, 'Staying put', 'Engines in the distance, but traffic on that road is not unusual'); return; }
       if (!u.fleeAt && !u.stay && why !== 'heard vehicles' && !F.ch(W, 0.65)) { u.stay = true; F.trace(W, u.name, 'Hiding inside the compound', why + '; decided running in the dark was the greater risk'); return; }
@@ -34,9 +36,10 @@
   function postEnemy(W, u, ok) {
     const fr = F.fresh(W, u, 90); let near = 1e9; for (const t of fr) near = Math.min(near, F.dist(u.pos, t));
     const under = u.members.some(sid => W.t - W.soldiers[sid].hitAt < 8), night = F.isNight(W.t);
-    const shot = (W.noise || []).find(n => n.u !== u.id && W.t - n.t < 6 && F.dist(n, u.pos) < (u.hearR || 3000));
-    if (shot) alert(W, u, 'gunfire');
-    if (!u.heardVeh && W.t % 5 === 0) { const r = night ? 1400 : 900; for (const id in W.vehicles) { const v = W.vehicles[id], cu = v.unit && W.units[v.unit]; if (cu && cu.side === 'blue' && cu.moving && (!cu.dis || cu.kind === 'mounted') && F.dist(v.pos, u.pos) < r) { u.heardVeh = W.t; alert(W, u, 'heard vehicles'); break; } } }
+    const shot = (W.noise || []).find(n => n.u !== u.id && W.t - n.t < 6 && F.dist(n, u.pos) < (n.r || u.hearR || 3000));
+    if (shot) alert(W, u, shot.blast ? 'explosion' : 'gunfire');
+    if (u.readyAt && W.t >= u.readyAt && u.asleep) { u.asleep = false; u.members.forEach(id => { const s = W.soldiers[id]; if (s.state === 'ok') s.armed = true; }); F.ev(W, 'enemy-armed', `${u.name} armed and ready`, { unit: u.id }); }
+    if (!u.heardVeh && W.t % 5 === 0) { const r = night ? 1400 : 900; for (const id in W.vehicles) { const v = W.vehicles[id], cu = v.unit && W.units[v.unit]; if (cu && cu.side === 'blue' && cu.moving && (!cu.dis || cu.kind === 'mounted' || cu.kind === 'air') && F.dist(v.pos, u.pos) < (cu.kind === 'air' ? (night ? 1200 : 1600) : r)) { u.heardVeh = W.t; alert(W, u, cu.kind === 'air' ? 'heard helicopters' : 'heard vehicles'); break; } } }
     if (fr.length && !u.warned) { u.warned = W.t; alert(W, u, 'saw armed men'); for (const oid in W.units) { const o = W.units[oid]; if (o !== u && o.side === 'red' && o.post && F.dist(o.pos, u.pos) < 400) alert(W, o, 'warned by ' + u.name); } }
     if (u.con) {
       const c = u.con; if (fr.length || under) c.last = W.t; const cas = u.members.length - ok - (u.cas0 || 0), ammo = ammoOf(W, u);

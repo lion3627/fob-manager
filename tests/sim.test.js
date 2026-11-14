@@ -116,11 +116,11 @@ const runOp = (W, cap) => { const end = W.t + (cap || 12 * H); while (W.op.statu
 
 test('both operation scenarios run to the end without the player, with every round and litre accounted for', () => {
   for (const id of Object.keys(F.SCENARIOS)) {
-    const W = F.createOp(5, id); assert.strictEqual(F.opCmd.launch(W).ok, true); runOp(W);
+    const W = F.createOp(5, id); if (W.op.kind === 'compound') F.cqbSamplePlan(W, 'yard'); assert.strictEqual(F.opCmd.launch(W).ok, true); runOp(W);
     assert.strictEqual(W.op.status, 'complete', id + ' did not finish');
     const a = F.audit(W); for (const ty in a) assert.ok(Math.abs(a[ty].delta) < 1e-6, `${id}: ${ty} off by ${a[ty].delta}`);
     assert.ok(W.events.some(e => e.type === 'contact'), id + ': no fight happened');
-    for (const el of Object.keys(W.op.plan.els)) assert.ok(W.decisions.some(d => d.actor === W.units[el].call) || W.units[el].kind === 'mounted', `${el} made no recorded decision`);
+    for (const el of Object.keys(W.op.plan.els)) assert.ok(W.decisions.some(d => d.actor === W.units[el].call) || W.units[el].kind === 'mounted' || W.op.kind === 'compound', `${el} made no recorded decision`);
   }
 });
 
@@ -165,11 +165,68 @@ test('engines heard near the compound alert the enemy; the target may slip away 
 
 test('the command post only believes the target is taken when an element reports it, and then it is true', () => {
   let reports = 0;
-  for (let seed = 1; seed <= 6; seed++) {
-    const W = F.createOp(seed, 'iron'); F.opCmd.launch(W); runOp(W); const h = Object.values(W.soldiers).find(s => s.hvt);
+  for (let seed = 1; seed <= 12; seed++) {
+    const W = F.createOp(seed, seed % 2 ? 'cobalt' : 'iron'); F.opCmd.launch(W); runOp(W); const h = Object.values(W.soldiers).find(s => s.hvt);
     if (W.hq.hvt && W.hq.hvt.state === 'captured') { reports++; assert.strictEqual(h.state, 'det'); }
     if (W.hq.hvt && W.hq.hvt.state === 'killed') { reports++; assert.strictEqual(h.state, 'kia'); }
     if (!W.hq.hvt) assert.ok(!W.hq.log.some(l => /JACKPOT/.test(l.text)));
   }
   assert.ok(reports >= 1, 'at least one run produced a target report');
+});
+
+/* ---------- compound raid ---------- */
+const CQ = F.CQB, at = (x, y, f) => { const p = { x: CQ.C.x + x, y: CQ.C.y + y }; if (f) p.f = f; return p; };
+
+test('compound walls, closed doors and floors block sight; an open door does not', () => {
+  const W = F.createOp(1, 'lantern');
+  assert.strictEqual(F.blocked(W, at(5, -9), at(5, 10)), true, 'house wall between a room and the yard');
+  assert.strictEqual(F.blocked(W, at(8, -3), at(8, 3)), true, 'closed front door');
+  W.map.doors.dF.open = true; assert.strictEqual(F.blocked(W, at(8, -3), at(8, 3)), false, 'through the open front door');
+  assert.strictEqual(F.blocked(W, at(18, -9, 1), at(18, -12)), true, 'different floors');
+  assert.strictEqual(F.blocked(W, at(18, -9, 1), at(16, -12, 1)), false, 'same room, same floor');
+  assert.strictEqual(F.blocked(W, at(-20, -11), at(-20, -40), true), false, 'radio passes walls');
+});
+
+test('the compound plan starts empty and asks for one decision at a time before it can launch', () => {
+  const W = F.createOp(2, 'lantern'), E = F.cqbEdit;
+  assert.ok(F.cqbNeeds(W).includes('insert')); assert.strictEqual(F.opCmd.launch(W).ok, false);
+  assert.ok(Object.values(W.op.plan.teams).every(T => !T.entry && !T.rooms.length), 'no team has been given anything');
+  E.insert(W, 'out'); assert.ok(!F.cqbNeeds(W).includes('insert')); assert.ok(F.cqbNeeds(W).includes('entry:t1'));
+  assert.strictEqual(E.how(W, 't1', 'manual'), true); assert.strictEqual(E.entry(W, 't1', 'brE'), true); assert.strictEqual(W.op.plan.teams.t1.how, 'explosive', 'a wall can only be blown');
+  assert.strictEqual(E.how(W, 't1', 'manual'), false);
+  E.room(W, 't1', 'h1e'); const walk = F.cqbTeamWalk(W, 't1'); assert.deepStrictEqual(walk.rooms.slice(-1), ['h1e']); assert.ok(walk.rooms.includes('h0e'), 'the team clears the rooms it passes through');
+  E.reserve(W, 't2', true); E.entry(W, 't3', 'gate'); E.room(W, 't3', 'guest'); E.cordon(W, 's'); E.together(W, true); E.sp(W, W.t + 1800);
+  assert.deepStrictEqual(F.cqbNeeds(W), []); assert.strictEqual(F.opCmd.launch(W).ok, true);
+  assert.strictEqual(E.insert(W, 'yard'), false, 'no edits once launched');
+});
+
+test('the assaulters do not shoot an unarmed person, even in the same room during a fight', () => {
+  const W = F.createOp(3, 'lantern'), t1 = W.units.t1, g = W.soldiers[W.units.g2.members[0]];
+  W.map.doors.dF.open = true; t1.members.forEach((id, k) => { W.soldiers[id].pos = at(4 + k, -4); }); t1.pos = at(5, -4);
+  t1.con = { t0: W.t, phase: 'fight', last: W.t, lastFire: W.t }; t1.kb.con[g.id] = { x: g.pos.x, y: g.pos.y, f: 0, t: W.t, down: false, unit: 'g2' };
+  const before = t1.members.reduce((a, id) => a + W.soldiers[id].carry.A556, 0);
+  for (let i = 0; i < 60; i++) { W.t++; t1.kb.con[g.id].t = W.t; F.fight(W); }
+  assert.strictEqual(g.state, 'ok'); assert.strictEqual(t1.members.reduce((a, id) => a + W.soldiers[id].carry.A556, 0), before, 'not a round fired');
+  g.armed = true; for (let i = 0; i < 60 && g.state === 'ok'; i++) { W.t++; t1.kb.con[g.id].t = W.t; F.fight(W); }
+  assert.notStrictEqual(g.state, 'ok', 'once he is armed he is engaged');
+});
+
+test('sleepers wake on a breaching charge and take time to reach their weapons', () => {
+  const W = F.createOp(4, 'lantern'), u = W.units.h1; W.op.status = 'running';
+  W.noise.push({ x: CQ.C.x + 8, y: CQ.C.y, t: W.t + 1, side: 'blue', u: 't1', r: 2500, blast: true });
+  F.run(W, 2); assert.ok(u.readyAt, 'woken'); assert.ok(u.readyAt - W.t >= 12 && u.readyAt - W.t <= 45, 'reaction after a blast');
+  assert.strictEqual(W.soldiers[u.members[0]].armed, false, 'not armed yet');
+  assert.ok(W.events.some(e => e.type === 'enemy-alert' && /explosion/.test(e.text)));
+  F.run(W, 50); assert.strictEqual(W.soldiers[u.members[0]].armed, true);
+});
+
+test('the compound raid runs to the end for each way in, with every round, charge and litre accounted for', () => {
+  for (const [seed, v] of [[1, 'yard'], [2, 'out'], [3, 'off'], [6, 'yard']]) {
+    const W = F.createOp(seed, 'lantern'); F.cqbSamplePlan(W, v); assert.strictEqual(F.opCmd.launch(W).ok, true); runOp(W);
+    assert.strictEqual(W.op.status, 'complete', v + ' did not finish');
+    const a = F.audit(W); for (const ty in a) assert.ok(Math.abs(a[ty].delta) < 1e-6, `${v}: ${ty} off by ${a[ty].delta}`);
+    assert.ok((W.ledger.used.CHG || 0) >= 1, 'charges are used out of what the breachers carried');
+    assert.ok(W.events.some(e => e.type === 'breach'));
+    const o = W.op.outcome; if (W.hq.hvt) assert.strictEqual(W.hq.hvt.state === 'captured', o.hvt.startsWith('captured'), 'the command post believes what the teams reported');
+  }
 });

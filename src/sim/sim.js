@@ -7,7 +7,7 @@
     if (W.scn) F.stepOp(W); else { F.stepStaff(W); if (W.t % 60 === 0) F.stepPlayer(W); }
     F.stepEnemy(W);
     F.stepUnits(W);
-    const hot = W.t % 5 === 0 || Object.values(W.units).some(u => u.con);
+    const hot = W.t % 5 === 0 || (W.op && W.op.kind === 'compound' && W.op.status === 'running') || Object.values(W.units).some(u => u.con);
     if (hot && (W.t % 5 === 0 || W.t % 2 === 0)) F.sense(W);
     F.fight(W);
     F.stepComms(W);
