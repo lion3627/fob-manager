@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "lion3627-skills": {
+      "source": {
+        "source": "github",
+        "repo": "lion3627/claude-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "structural-fixer@lion3627-skills": true
+  }
+}
